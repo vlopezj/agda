@@ -402,6 +402,16 @@ typeEndsInDef t = liftTCM $ do
     Def d vs -> return $ Just d
     _        -> return Nothing
 
+-- | To check if a function is marked as terminating.
+isFunTerminating :: Definition -> Bool
+isFunTerminating def =
+  case theDef def of
+   Function{ funTerminates = t } ->
+     case t of
+      Just True -> True
+      _         -> False
+   _ -> False
+
 -- | Termination check a definition by pattern matching.
 --
 --   TODO: Refactor!
@@ -423,6 +433,9 @@ termDef name = terSetCurrent name $ do
     sep [ text "termination checking body of" <+> prettyTCM name
         , nest 2 $ text ":" <+> prettyTCM t
         ]
+
+  -- ASR (25 July 2015). Issue 1137.
+  when (isFunTerminating def) __IMPOSSIBLE__
 
   -- If --without-K, we disregard all arguments (and result)
   -- which are not of data or record type.
