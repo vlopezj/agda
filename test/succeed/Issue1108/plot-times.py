@@ -4,8 +4,11 @@ import matplotlib.pyplot as plt
 
 data = read_times("times/")
 
-d = data['Issue1108-2']
+case = sys.argv[1]
 
+d = data[case]
+
+plt.title(case)
 plt.subplot(111)
 plt.subplots_adjust(right=0.7)
 for module, profile in sorted(d.items(), 
@@ -15,7 +18,7 @@ for module, profile in sorted(d.items(),
     n = [n for n,_ in r]
     v = [1+v for _,v in r]
 
-    plt.loglog(n, v, label = module)
+    plt.plot(n, v, label = module)
 
 plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
 plt.show()
