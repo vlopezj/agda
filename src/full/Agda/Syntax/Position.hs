@@ -83,6 +83,7 @@ import Data.Typeable (Typeable)
 import Test.QuickCheck.All
 
 import Agda.Utils.FileName hiding (tests)
+import Agda.Utils.List hiding (tests)
 import Agda.Utils.Null
 import Agda.Utils.Pretty
 import Agda.Utils.QuickCheck
@@ -184,6 +185,9 @@ instance HasRange Interval where
 
 instance HasRange Range where
     getRange = id
+
+instance HasRange Bool where
+    getRange _ = noRange
 
 instance HasRange a => HasRange [a] where
     getRange = foldr fuseRange noRange
@@ -681,6 +685,22 @@ prop_continuous r =
   rangeInvariant cr &&
   rPositions cr == makeInterval (rPositions r)
   where cr = continuous r
+
+prop_continuousPerLine :: Range -> Bool
+prop_continuousPerLine r =
+  rangeInvariant r'
+    &&
+  distinct lineNumbers
+  where
+  r'@(Range is') = continuousPerLine r
+
+  lineNumbers = concatMap lines is'
+    where
+    lines i | s == e    = [s]
+            | otherwise = [s, e]
+      where
+      s = posLine (iStart i)
+      e = posLine (iEnd   i)
 
 prop_fuseIntervals :: Interval' Integer -> Property
 prop_fuseIntervals i1 =
