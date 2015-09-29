@@ -560,10 +560,25 @@ instance FreshName () where
 -- ** Managing file names
 ---------------------------------------------------------------------------
 
+-- | A pair of a module file name, and the location in which the interface
+--   file should be.
+data ModuleAbsolutePath = ModuleAbsolutePath {
+  moduleAbsolutePath :: AbsolutePath
+ ,moduleIFilePath    :: AbsolutePath
+ } deriving (Show)
+
+-- | Absolute path of the interface file of a module
+toIFile :: ModuleAbsolutePath -> AbsolutePath
+toIFile = moduleIFilePath
+
+-- | Absolute path of the source file of a module
+toAbsolutePath :: ModuleAbsolutePath -> AbsolutePath
+toAbsolutePath = moduleAbsolutePath
+
 -- | Maps top-level module names to the corresponding source file
 -- names.
 
-type ModuleToSource = Map TopLevelModuleName AbsolutePath
+type ModuleToSource = Map TopLevelModuleName ModuleAbsolutePath
 
 -- | Maps source file names to the corresponding top-level module
 -- names.
@@ -575,7 +590,7 @@ type SourceToModule = Map AbsolutePath TopLevelModuleName
 sourceToModule :: TCM SourceToModule
 sourceToModule =
   Map.fromList
-     .  List.map (\(m, f) -> (f, m))
+     .  List.map (\(m, f) -> (toAbsolutePath f, m))
      .  Map.toList
     <$> use stModuleToSource
 

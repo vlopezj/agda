@@ -9,6 +9,7 @@ module Agda.Utils.FileName
   , rootName
   , mkAbsolute
   , absolute
+  , absoluteNonUnique
   , (===)
   , doesFileExistCaseSensitive
   , tests
@@ -122,6 +123,14 @@ absolute f = mkAbsolute <$> do
   m1 .||. m2 = do
     b1 <- m1
     if b1 then return True else m2
+
+-- | Makes the path absolute, without resolving symlinks
+--
+-- This function may raise an @\_\_IMPOSSIBLE\_\_@ error if
+-- 'makeAbsolute' does not return an absolute path.
+
+absoluteNonUnique :: FilePath -> IO AbsolutePath
+absoluteNonUnique = fmap mkAbsolute . System.Directory.makeAbsolute
 
 -- | Tries to establish if the two file paths point to the same file
 -- (or directory).

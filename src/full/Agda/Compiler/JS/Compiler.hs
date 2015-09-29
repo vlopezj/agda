@@ -14,11 +14,10 @@ import qualified Data.Map as Map
 import System.Directory ( createDirectoryIfMissing )
 import System.FilePath ( splitFileName, (</>) )
 
-import Agda.Interaction.FindFile ( findFile, findInterfaceFile )
+import Agda.Interaction.FindFile ( findFile, findInterfaceFile, moduleProjectRoot )
 import Agda.Interaction.Imports ( isNewerThan )
 import Agda.Interaction.Options ( optCompileDir )
 import Agda.Syntax.Common ( Nat, unArg, namedArg )
-import Agda.Syntax.Concrete.Name ( projectRoot )
 import Agda.Syntax.Abstract.Name
   ( ModuleName(MName), QName,
     mnameToConcrete,
@@ -88,7 +87,7 @@ compilerMain mainI =
         -- The default output directory is the project root.
         let tm = toTopLevelModuleName $ iModuleName mainI
         f <- findFile tm
-        return $ filePath $ projectRoot f tm
+        return $ filePath $ moduleProjectRoot f tm
     setCommandLineOptions $
       opts { optCompileDir = Just compileDir }
 

@@ -30,7 +30,7 @@ import Agda.Syntax.Common
 import Agda.Syntax.Concrete (TopLevelModuleName, moduleNameParts)
 import qualified Agda.Interaction.FindFile as Find
 import Agda.Interaction.Highlighting.Precise
-import Agda.TypeChecking.Monad (TCM)
+import Agda.TypeChecking.Monad (TCM, toAbsolutePath)
 import qualified Agda.TypeChecking.Monad as TCM
 import Agda.Interaction.Options
 import Agda.Compiler.CallCompiler
@@ -530,7 +530,7 @@ generateLaTeX mod hi = do
       liftIO $ copyFile styFile (dir </> defaultStyFile)
 
   let outPath = modToFile mod
-  inAbsPath <- liftM filePath (Find.findFile mod)
+  inAbsPath <- liftM (filePath . toAbsolutePath) (Find.findFile mod)
 
   liftIO $ do
     source <- UTF8.readTextFile inAbsPath

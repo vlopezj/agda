@@ -90,7 +90,7 @@ compilerMain modIsMain mainI =
         -- The default output directory is the project root.
         let tm = toTopLevelModuleName $ iModuleName mainI
         f <- findFile tm
-        return $ filePath $ C.projectRoot f tm
+        return $ filePath $ moduleProjectRoot f tm
     setCommandLineOptions $
       opts { optCompileDir = Just compileDir }
 

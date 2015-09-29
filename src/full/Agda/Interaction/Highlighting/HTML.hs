@@ -38,7 +38,7 @@ import Agda.Interaction.Options
 import qualified Agda.Syntax.Concrete as C
 import Agda.Syntax.Common
 
-import Agda.TypeChecking.Monad (TCM)
+import Agda.TypeChecking.Monad (TCM, toAbsolutePath)
 import qualified Agda.TypeChecking.Monad as TCM
 
 import Agda.Utils.FileName (filePath)
@@ -115,7 +115,7 @@ generatePage
   -> C.TopLevelModuleName  -- ^ Module to be highlighted.
   -> TCM ()
 generatePage renderpage dir mod = do
-  mf <- Map.lookup mod <$> use TCM.stModuleToSource
+  mf <- liftM toAbsolutePath . Map.lookup mod <$> use TCM.stModuleToSource
   case mf of
     Nothing -> __IMPOSSIBLE__
     Just f  -> do

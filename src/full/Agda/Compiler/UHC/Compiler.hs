@@ -309,7 +309,7 @@ setUHCDir :: Interface -> TCM FilePath
 setUHCDir mainI = do
     let tm = toTopLevelModuleName $ iModuleName mainI
     f <- findFile tm
-    compileDir' <- gets (fromMaybe (filePath $ CN.projectRoot f tm) .
+    compileDir' <- gets (fromMaybe (filePath $ moduleProjectRoot f tm) .
                                   optCompileDir . stPersistentOptions . stPersistentState)
     compileDir <- liftIO $ canonicalizePath compileDir'
     liftIO $ setCurrentDirectory compileDir

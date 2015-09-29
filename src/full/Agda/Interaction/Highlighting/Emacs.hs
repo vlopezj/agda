@@ -12,7 +12,8 @@ import Agda.Interaction.Highlighting.Range
 import Agda.Interaction.EmacsCommand
 import Agda.Syntax.Common
 import Agda.TypeChecking.Monad
-  (TCM, envHighlightingMethod, HighlightingMethod(..), ModuleToSource)
+  (TCM, envHighlightingMethod, HighlightingMethod(..), ModuleToSource,
+   toAbsolutePath)
 import Agda.Utils.FileName
 import qualified Agda.Utils.IO.UTF8 as UTF8
 import Agda.Utils.String
@@ -73,7 +74,7 @@ showAspects modFile (r, m) =
     Nothing     -> []
     Just (m, p) -> case Map.lookup m modFile of
       Nothing -> __IMPOSSIBLE__
-      Just f  -> [Cons (A $ quote $ filePath f) (A $ show p)]
+      Just f  -> [Cons (A $ quote $ filePath $ toAbsolutePath f) (A $ show p)]
 
 -- | Turns syntax highlighting information into a list of
 -- S-expressions.

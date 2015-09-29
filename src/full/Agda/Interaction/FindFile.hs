@@ -8,6 +8,8 @@
 
 module Agda.Interaction.FindFile
   ( toIFile
+  , toAbsolutePath
+  , moduleProjectRoot
   , FindError(..), findErrorToTypeError
   , findFile, findFile', findFile''
   , findInterfaceFile
@@ -19,11 +21,13 @@ module Agda.Interaction.FindFile
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Trans
+import Data.Function (on)
 import Data.List
 import qualified Data.Map as Map
 import System.FilePath
 
 import Agda.Syntax.Concrete
+import qualified Agda.Syntax.Concrete.Name as C
 import Agda.Syntax.Parser
 import Agda.TypeChecking.Monad.Base
 import Agda.TypeChecking.Monad.Benchmark (billTo)
@@ -35,9 +39,19 @@ import Agda.Utils.Lens
 
 -- | Converts an Agda file name to the corresponding interface file
 -- name.
+toIFileInternal :: AbsolutePath -> AbsolutePath
+toIFileInternal f = mkAbsolute (replaceExtension (filePath f) ".agdai")
 
-toIFile :: AbsolutePath -> AbsolutePath
-toIFile f = mkAbsolute (replaceExtension (filePath f) ".agdai")
+moduleAbsolute :: FilePath -> IO ModuleAbsolutePath
+moduleAbsolute f = do
+  moduleIFilePath <- toIFileInternal <$> absoluteNonUnique f
+  moduleAbsolutePath <- absolute f
+  return ModuleAbsolutePath { moduleAbsolutePath  = moduleAbsolutePath
+                            , moduleIFilePath     = moduleIFilePath
+                            }
+
+moduleProjectRoot :: ModuleAbsolutePath -> TopLevelModuleName -> AbsolutePath
+moduleProjectRoot file m = C.projectRoot (toIFile file) m
 
 -- | Errors which can arise when trying to find a source file.
 --
@@ -66,7 +80,7 @@ findErrorToTypeError m (Ambiguous files) =
 --
 -- Raises an error if the file cannot be found.
 
-findFile :: TopLevelModuleName -> TCM AbsolutePath
+findFile :: TopLevelModuleName -> TCM ModuleAbsolutePath
 findFile m = do
   mf <- findFile' m
   case mf of
@@ -77,7 +91,7 @@ findFile m = do
 --   module name. The returned paths are absolute.
 --
 --   SIDE EFFECT:  Updates 'stModuleToSource'.
-findFile' :: TopLevelModuleName -> TCM (Either FindError AbsolutePath)
+findFile' :: TopLevelModuleName -> TCM (Either FindError ModuleAbsolutePath)
 findFile' m = do
     dirs         <- getIncludeDirs
     modFile      <- use stModuleToSource
@@ -93,23 +107,23 @@ findFile''
   -> TopLevelModuleName
   -> ModuleToSource
   -- ^ Cached invocations of 'findFile'''. An updated copy is returned.
-  -> IO (Either FindError AbsolutePath, ModuleToSource)
+  -> IO (Either FindError ModuleAbsolutePath, ModuleToSource)
 findFile'' dirs m modFile =
   case Map.lookup m modFile of
     Just f  -> return (Right f, modFile)
     Nothing -> do
-      files <- mapM absolute
+      files <- mapM moduleAbsolute
                     [ filePath dir </> file
                     | dir  <- dirs
                     , file <- map (moduleNameToFileName m)
                                   [".agda", ".lagda"]
                     ]
       existingFiles <-
-        liftIO $ filterM (doesFileExistCaseSensitive . filePath) files
-      return $ case nub existingFiles of
-        []     -> (Left (NotFound files), modFile)
+        liftIO $ filterM (doesFileExistCaseSensitive . filePath . toAbsolutePath) files
+      return $ case nubBy ((==) `on` toAbsolutePath) existingFiles of
+        []     -> (Left (NotFound (map toAbsolutePath files)), modFile)
         [file] -> (Right file, Map.insert m file modFile)
-        files  -> (Left (Ambiguous files), modFile)
+        files  -> (Left (Ambiguous (map toAbsolutePath files)), modFile)
 
 -- | Finds the interface file corresponding to a given top-level
 -- module name. The returned paths are absolute.
@@ -120,7 +134,7 @@ findFile'' dirs m modFile =
 
 findInterfaceFile :: TopLevelModuleName -> TCM (Maybe AbsolutePath)
 findInterfaceFile m = do
-  f  <- toIFile <$> findFile m
+  f  <- moduleIFilePath <$> findFile m
   ex <- liftIO $ doesFileExistCaseSensitive $ filePath f
   return $ if ex then Just f else Nothing
 
@@ -140,8 +154,9 @@ checkModuleName name file = do
                                 ModuleNameDoesntMatchFileName name files
     Left (Ambiguous files) -> typeError $
                                 AmbiguousTopLevelModuleName name files
-    Right file' -> do
-      file <- liftIO $ absolute (filePath file)
+    Right foundFile -> do
+      file <- liftIO $ absolute $ filePath $ file
+      let file' = toAbsolutePath foundFile
       if file === file' then
         return ()
        else

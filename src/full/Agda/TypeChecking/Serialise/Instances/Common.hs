@@ -151,7 +151,7 @@ instance EmbPrj AbsolutePath where
     modify $ \s -> s { modFile = mf }
     case r of
       Left err -> throwError $ findErrorToTypeError m err
-      Right f  -> return f
+      Right f  -> return (toAbsolutePath f)
 
 instance EmbPrj Position where
   icod_ (P.Pn file pos line col) = icode4' file pos line col

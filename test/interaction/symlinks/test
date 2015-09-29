@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# CLEAN UP
+find . -name '*.agdai' -print0 | xargs -0 rm
+agda -i dist-lib -i . -c --no-main Example.agda
+if [ -f src-lib/Qualified/Module.agdai ]; then
+    cat 1>&2 <<EOF
+FAIL: Agda interface files should end up in the directory where the symbolic
+link to the '.agda' file is, not where the actual '.agda' file is.
+EOF
+    exit 1
+fi
+
+if [ ! -f dist-lib/Qualified/Module.agdai ]; then
+    cat 1>&2 <<EOF
+FAIL: Agda should produce an interface file
+EOF
+    exit 2
+fi
+
+exit 0

@@ -19,4 +19,9 @@ instance MonadIO m => MonadIO (TCMT m)
 
 type TCM = TCMT IO
 
-type ModuleToSource = Map TopLevelModuleName AbsolutePath
+data ModuleAbsolutePath = ModuleAbsolutePath {
+  moduleAbsolutePath :: AbsolutePath
+ ,moduleIFilePath    :: AbsolutePath
+ }
+
+type ModuleToSource = Map TopLevelModuleName ModuleAbsolutePath

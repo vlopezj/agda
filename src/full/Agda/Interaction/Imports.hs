@@ -262,7 +262,7 @@ getInterface' x isMain = do
         ignore <- ignoreInterfaces
         cached <- isCached file -- if it's cached ignoreInterfaces has no effect
                                 -- to avoid typechecking a file more than once
-        sourceH <- liftIO $ hashFile file
+        sourceH <- liftIO $ hashFile (toAbsolutePath file)
         ifaceH  <-
           case cached of
             Nothing -> fmap fst <$> getInterfaceFileHashes (filePath $ toIFile file)
@@ -288,7 +288,7 @@ getInterface' x isMain = do
       unless (topLevelName == x) $ do
         -- Andreas, 2014-03-27 This check is now done in the scope checker.
         -- checkModuleName topLevelName file
-        typeError $ OverlappingProjects file topLevelName x
+        typeError $ OverlappingProjects (toAbsolutePath file) topLevelName x
 
       visited <- isVisited x
       reportSLn "import.iface" 5 $ if visited then "  We've been here. Don't merge."
@@ -378,10 +378,11 @@ getInterface' x isMain = do
                 mapM_ setOptionsFromPragma (iPragmaOptions i)
                 return (False, (i, NoWarnings))
 
+      typeCheckThe :: ModuleAbsolutePath -> TCMT IO (Bool, (Interface, MaybeWarnings))
       typeCheckThe file = do
           unless includeStateChanges cleanCachedLog
           let withMsgs = bracket_
-                (chaseMsg "Checking" $ Just $ filePath file)
+                (chaseMsg "Checking" $ Just $ filePath $ toAbsolutePath file)
                 (const $ chaseMsg "Finished" Nothing)
 
           -- Do the type checking.
@@ -464,12 +465,12 @@ getInterface' x isMain = do
 
 highlightFromInterface
   :: Interface
-  -> AbsolutePath
+  -> ModuleAbsolutePath
      -- ^ The corresponding file.
   -> TCM ()
 highlightFromInterface i file = do
   reportSLn "import.iface" 5 $
-    "Generating syntax info for " ++ filePath file ++
+    "Generating syntax info for " ++ filePath (toAbsolutePath file) ++
     " (read from interface)."
   printHighlightingInfo (iHighlighting i)
 
@@ -537,14 +538,15 @@ removePrivates si = si { scopeModules = restrictPrivate <$> scopeModules si }
 -- information.
 
 createInterface
-  :: AbsolutePath          -- ^ The file to type check.
+  :: ModuleAbsolutePath          -- ^ The file to type check.
   -> C.TopLevelModuleName  -- ^ The expected module name.
   -> TCM (Interface, MaybeWarnings)
 createInterface file mname =
-  local (\e -> e { envCurrentPath = Just file }) $ do
+  let file' = toAbsolutePath file in
+  local (\e -> e { envCurrentPath = Just file' }) $ do
     modFile       <- use stModuleToSource
     fileTokenInfo <- Bench.billTo [Bench.Highlighting] $
-                       generateTokenInfo file
+                       generateTokenInfo file'
     stTokens .= fileTokenInfo
 
     reportSLn "import.iface.create" 5 $
@@ -559,7 +561,7 @@ createInterface file mname =
 
     -- Parsing.
     (pragmas, top) <- Bench.billTo [Bench.Parsing] $
-      liftIO $ parseFile' moduleParser file
+      liftIO $ parseFile' moduleParser file'
 
     pragmas <- concat <$> concreteToAbstract_ pragmas
                -- identity for top-level pragmas at the moment
@@ -572,7 +574,7 @@ createInterface file mname =
     -- Scope checking.
     reportSLn "import.iface.create" 7 $ "Starting scope checking."
     topLevel <- Bench.billTo [Bench.Scoping] $
-      concreteToAbstract_ (TopLevel file top)
+      concreteToAbstract_ (TopLevel file' top)
     reportSLn "import.iface.create" 7 $ "Finished scope checking."
 
     let ds    = topLevelDecls topLevel
@@ -633,7 +635,7 @@ createInterface file mname =
 
       whenM (optGenerateVimFile <$> commandLineOptions) $
         -- Generate Vim file.
-        withScope_ scope $ generateVimFile $ filePath file
+        withScope_ scope $ generateVimFile $ filePath $ toAbsolutePath file
     reportSLn "import.iface.create" 7 $ "Finished highlighting from type info."
 
     setScope scope
@@ -643,7 +645,7 @@ createInterface file mname =
     reportSLn "import.iface.create" 7 $ "Starting serialization."
     syntaxInfo <- use stSyntaxInfo
     i <- Bench.billTo [Bench.Serialization] $ do
-      buildInterface file topLevel syntaxInfo previousHsImports previousHsImportsUHC options
+      buildInterface file' topLevel syntaxInfo previousHsImports previousHsImportsUHC options
 
     reportSLn "tc.top" 101 $ concat $
       "Signature:\n" :

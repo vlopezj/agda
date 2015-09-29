@@ -211,7 +211,7 @@ setEpicDir :: Interface -> Compile (TCMT IO) ()
 setEpicDir mainI = do
     let tm = toTopLevelModuleName $ iModuleName mainI
     f <- lift $ findFile tm
-    compileDir' <- lift $ gets (fromMaybe (filePath $ CN.projectRoot f tm) .
+    compileDir' <- lift $ gets (fromMaybe (filePath $ moduleProjectRoot f tm) .
                                   optCompileDir . stPersistentOptions . stPersistentState)
     compileDir <- liftIO $ canonicalizePath compileDir'
     liftIO $ setCurrentDirectory compileDir
