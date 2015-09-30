@@ -24,6 +24,7 @@ import Data.Monoid (mappend)
 import Data.List hiding (sort)
 import qualified Data.Map as Map
 import Data.Traversable (sequenceA)
+import Data.Void
 
 import Agda.Interaction.Options
 import Agda.Interaction.Highlighting.Generate (storeDisambiguatedName)
@@ -492,7 +493,7 @@ checkExtendedLambda i di qname cs e t = do
      addConstant qname =<< do
        useTerPragma $
          (defaultDefn info qname t emptyFunction) { defMutual = j }
-     reportSDoc "tc.term.exlam" 50 $
+     reportSDoc "tc.term.exlam" 20 $
        text "extended lambda's implementation \"" <> prettyTCM qname <>
        text "\" has type: " $$ prettyTCM t -- <+> text " where clauses: " <+> text (show cs)
      args     <- getContextArgs
@@ -501,8 +502,13 @@ checkExtendedLambda i di qname cs e t = do
      -- freevars <- getSecFreeVars top --Andreas, 2013-02-26 this could be wrong in the presence of module parameters and a where block
      let argsNoParam = genericDrop freevars args -- don't count module parameters
      let (hid, notHid) = partition isHidden argsNoParam
-     abstract (A.defAbstract di) $ checkFunDef' t info NotDelayed
-                                                (Just (length hid, length notHid)) Nothing di qname cs
+     reportSDoc "tc.term.exlam" 30 $ vcat $
+       [ text "dropped args: " <+> prettyTCM (take freevars args)
+       , text "hidden  args: " <+> prettyTCM hid
+       , text "visible args: " <+> prettyTCM notHid
+       ]
+     abstract (A.defAbstract di) $
+       checkFunDef' t info NotDelayed (Just $ ExtLamInfo (length hid) (length notHid)) Nothing di qname cs
      return $ Def qname $ map Apply args
   where
     -- Concrete definitions cannot use information about abstract things.
@@ -984,7 +990,7 @@ checkApplication hd args e t = do
     -- Subcase: pattern synonym
     A.PatternSyn n -> do
       (ns, p) <- lookupPatternSyn n
-      p <- setRange (getRange n) . killRange <$> expandPatternSynonyms p  -- expand recursive pattern synonyms
+      p <- setRange (getRange n) . killRange <$> expandPatternSynonyms (vacuous p)  -- expand recursive pattern synonyms
       -- Expand the pattern synonym by substituting for
       -- the arguments we have got and lambda-lifting
       -- over the ones we haven't.
