@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase    #-}
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Agda.TypeChecking.With where
 
