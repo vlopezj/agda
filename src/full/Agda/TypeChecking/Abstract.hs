@@ -1,12 +1,13 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE PatternGuards #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Functions for abstracting terms over other terms.
 module Agda.TypeChecking.Abstract (abstractTerm, piAbstract) where
@@ -18,16 +19,24 @@ import Agda.Syntax.Common
 import Agda.Syntax.Internal
 
 import Agda.TypeChecking.Monad.Builtin (equalityUnview)
-import Agda.TypeChecking.Substitute
+import Agda.TypeChecking.Substitute (mkPi, raise, raiseS, Subst(..), applySubst,
+                                     applySubstNoSharing, liftS)
 
 import Agda.Utils.Functor
+
+#include "undefined.h"
+import Agda.Utils.Impossible
+
 import Agda.Utils.List (splitExactlyAt)
 
 import Agda.Utils.Pointer.Monad
 
 -- | @piAbstractTerm v a b[v] = (w : a) -> b[w]@
-piAbstractTerm :: Term -> Type -> Type -> Type
-piAbstractTerm v a b = mkPi (defaultDom ("w", a)) $ abstractTerm v b
+piAbstractTermM :: (MonadAbstractTerm m) => Type -> Type -> m Type
+piAbstractTermM a b = mkPi (defaultDom ("w", a)) <$> abstractTermM b
+
+piAbstractTermM' :: (MonadAbstractTerm m) => Term -> Type -> Type -> m Type
+piAbstractTermM' v a b = localParam v$ piAbstractTermM a b
 
 -- | @piAbstract (v, a) b[v] = (w : a) -> b[w]@
 --
@@ -35,16 +44,22 @@ piAbstractTerm v a b = mkPi (defaultDom ("w", a)) $ abstractTerm v b
 --
 --   @piAbstract (prf, Eq a v v') b[v,prf] = (w : a) (w' : Eq a w v') -> b[w,w']@
 
-piAbstract :: (Term, EqualityView) -> Type -> Type
-piAbstract (v, OtherType a) b = piAbstractTerm v a b
-piAbstract (prf, eqt@(EqualityType s _ _ a v _)) b =
-  funType (El s $ unArg a) $ funType eqt' $
-    swap01 $ abstractTerm (unArg $ raise 1 v) $ abstractTerm prf b
+piAbstractM :: (MonadAbstractTerm m) => (Term, EqualityView) -> Type -> m Type
+piAbstractM (v, OtherType a) b = piAbstractTermM' v a b
+piAbstractM (prf, eqt@(EqualityType s _ _ a v _)) b =
+  funType (El s $ unArg a) . funType eqt' <$>
+    (swap01 =<< abstractTermM' (unArg $ raise 1 v) =<< abstractTermM' prf b)
   where
     funType a = mkPi $ defaultDom ("w", a)
     -- Abstract the lhs (@a@) of the equality only.
     eqt1 = raise 1 eqt
     eqt' = equalityUnview $ eqt1 { eqtLhs = eqtLhs eqt1 $> var 0 }
+
+piAbstract :: (Term, EqualityView) -> Type -> Type
+piAbstract v a = runWith __IMPOSSIBLE__ $ (piAbstractM v a :: AbstractTermM Type)
+
+abstractTermM' :: (MonadAbstractTerm m, AbstractTerm m a) => Term -> a -> m a
+abstractTermM' t a = localParam t$ abstractTermM a
 
 -- | @isPrefixOf u v = Just es@ if @v == u `applyE` es@.
 class IsPrefixOf a where
@@ -76,25 +91,27 @@ class AbstractTerm m a where
   abstractTermM :: a -> m a
 
 --type MonadAbstractTerm = MonadMemoPtr "abstractTerm" Term Term Term
-type AbstractTermM = MemoPtrM "abstractTerm" Term Term Term                         
-
+type AbstractTermM = MemoPtrM "Agda.TypeChecking.Abstract.abstractTerm" Term Term Term
 class Monad m => MonadAbstractTerm m where
   runWith    :: Term -> m c -> c
   localParam :: Term -> m c -> m c
   askParam   :: m Term
   applyFun   :: Ptr Term -> m (Ptr Term)
+  applySubst_ :: (Subst Term a) => (Substitution' Term) -> a -> m a
 
 instance MonadAbstractTerm AbstractTermM where
   runWith = runWithMemoPtr
   localParam = localParamMemoPtr
   askParam = askParamMemoPtr
   applyFun = applyFunMemoPtr abstractTermM
+  applySubst_ s = return . applySubst s
 
 instance MonadAbstractTerm ((->) Term) where
   runWith = runWithReader
   localParam = localParamReader
   askParam = askParamReader
   applyFun = applyFunReader abstractTermM
+  applySubst_ s = return . applySubstNoSharing s
 
 instance (MonadAbstractTerm m) => AbstractTerm m Term where
   abstractTermM v = (askParam :: m Term) >>= \case
@@ -162,20 +179,17 @@ instance (MonadAbstractTerm m, AbstractTerm m a) => AbstractTerm m (Maybe a) whe
 
 instance (MonadAbstractTerm m, Subst Term a, AbstractTerm m a) => AbstractTerm m (Abs a) where
   abstractTermM (NoAbs x v) = NoAbs x <$> abstractTermM v
-  abstractTermM (Abs   x v) = askParam >>= \u -> Abs x . swap01 <$> localParam (raise 1 u) (abstractTermM v)
+  abstractTermM (Abs   x v) = askParam >>= \u -> Abs x <$> (swap01 =<< localParam (raise 1 u) (abstractTermM v))
 
 instance (MonadAbstractTerm m, AbstractTerm m a, AbstractTerm m b) => AbstractTerm m (a, b) where
   abstractTermM (x, y) = (,) <$> abstractTermM x <*> abstractTermM y
 
 -- | This swaps @var 0@ and @var 1@.
-swap01 :: (Subst Term a) => a -> a
-swap01 = applySubst $ var 1 :# liftS 1 (raiseS 1)
+swap01 :: (MonadAbstractTerm m, Subst Term a) => a -> m a
+swap01 = applySubst_ $ var 1 :# liftS 1 (raiseS 1)
 
 abstractTerm :: forall a. (AbstractTerm AbstractTermM a) => Term -> a -> a
 abstractTerm u v = runWith u (abstractTermM v :: AbstractTermM a)
 
-abstractTermNoSharing :: forall a. (AbstractTerm ((->) Term) a) => Term -> a -> a
-abstractTermNoSharing u v = runWith u (abstractTermM v :: Term -> a)
-
-
-
+abstractTermPure :: forall a. (AbstractTerm ((->) Term) a) => Term -> a -> a
+abstractTermPure u v = runWith u (abstractTermM v :: Term -> a)

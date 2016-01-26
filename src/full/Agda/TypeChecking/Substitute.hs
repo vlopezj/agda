@@ -1,14 +1,20 @@
 {-# LANGUAGE CPP                #-}
+{-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveFunctor      #-}
 {-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE LambdaCase  #-}
 {-# LANGUAGE PatternGuards      #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections      #-}
+{-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE ConstraintKinds   #-}
+{-# LANGUAGE DefaultSignatures   #-}
 
 #if __GLASGOW_HASKELL__ <= 708
 {-# LANGUAGE OverlappingInstances #-}
@@ -18,7 +24,8 @@
 
 module Agda.TypeChecking.Substitute
   ( module Agda.TypeChecking.Substitute
-  , Substitution'(..), Substitution
+  , Substitution'(..)
+  , Substitution
   ) where
 
 import Control.Arrow ((***), second)
@@ -48,6 +55,7 @@ import Agda.Utils.Empty
 import Agda.Utils.Functor
 import Agda.Utils.List
 import Agda.Utils.Permutation
+import Agda.Utils.Pointer.Monad
 import Agda.Utils.Size
 import Agda.Utils.Tuple
 
@@ -111,7 +119,8 @@ conApp :: ConHead -> Args -> Elims -> Term
 conApp ch                  args []             = Con ch args
 conApp ch                  args (Apply a : es) = conApp ch (args ++ [a]) es
 conApp ch@(ConHead c _ fs) args (Proj f  : es) =
-  let failure = flip trace __IMPOSSIBLE__ $
+  let failure :: forall a. a
+      failure = flip trace __IMPOSSIBLE__ $
         "conApp: constructor " ++ show c ++
         " with fields " ++ show fs ++
         " projected by " ++ show f
@@ -178,7 +187,7 @@ instance Apply a => Apply (Ptr a) where
 
 -- @applyE@ does not make sense for telecopes, definitions, clauses etc.
 
-instance Subst Term a => Apply (Tele a) where
+instance (Subst Term a) => Apply (Tele a) where
   apply tel               []       = tel
   apply EmptyTel          _        = __IMPOSSIBLE__
   apply (ExtendTel _ tel) (t : ts) = lazyAbsApp tel (unArg t) `apply` ts
@@ -400,6 +409,9 @@ piApply t args                    =
 ---------------------------------------------------------------------------
 -- * Abstraction
 ---------------------------------------------------------------------------
+
+type DefaultMonadSubst = DefaultMonadSubst' Term
+type DefaultMonadSubst' t = SubstM t
 
 -- | @(abstract args v) `apply` args --> v[args]@.
 class Abstract t where
@@ -683,6 +695,29 @@ lookupS rho i = case rho of
 -- * Substitution and raising/shifting/weakening
 ---------------------------------------------------------------------------
 
+-- | MonadSubst provides support for memoizing the results of applying a
+--   substitution to a values enclosed by pointers.
+
+class (Monad m) => MonadSubst m t | m -> t where
+  runWith    :: (Substitution' t) -> m c -> c
+  localParam :: (Substitution' t) -> m c -> m c
+  askParam   :: m (Substitution' t)
+  applyFun   :: (t ~ Term) => Ptr Term -> m (Ptr Term)
+
+type SubstM t = MemoPtrM "Agda.TypeChecking.Substitute.applySubst" (Substitution' t) Term Term
+
+instance MonadSubst (SubstM t) t where
+  runWith = runWithMemoPtr
+  localParam = localParamMemoPtr
+  askParam = askParamMemoPtr
+  applyFun = applyFunMemoPtr applySubstM
+
+instance MonadSubst ((->) (Substitution' t)) t where
+  runWith = runWithReader
+  localParam = localParamReader
+  askParam = askParamReader
+  applyFun = applyFunReader applySubstM
+
 -- | Apply a substitution.
 
 -- For terms:
@@ -693,7 +728,21 @@ lookupS rho i = case rho of
 -- Γ ⊢ tρ : σρ
 
 class DeBruijn t => Subst t a | a -> t where
+  applySubstM :: (MonadSubst m t) => a -> m a
   applySubst :: Substitution' t -> a -> a
+
+  applySubst t a = runWith t (applySubstM a :: DefaultMonadSubst' t a)
+  applySubstM a = askParam >>= \rho -> pure$ applySubst rho a
+  {-# MINIMAL applySubst | applySubstM #-}
+
+applySubstM' :: (MonadSubst m t, Subst t a) => Substitution' t -> a -> m a
+applySubstM' t a = localParam t $ applySubstM a
+
+applySubstSharing :: forall t a. (Subst t a) => Substitution' t -> a -> a
+applySubstSharing t a = runWith t (applySubstM a :: (DefaultMonadSubst' t) a)
+
+applySubstNoSharing :: forall t a. (Subst t a) => Substitution' t -> a -> a
+applySubstNoSharing t a = runWith t (applySubstM a :: (Substitution' t -> a))
 
 raise :: Subst t a => Nat -> a -> a
 raise = raiseFrom 0
@@ -713,180 +762,179 @@ strengthen err = applySubst (compactS err [Nothing])
 substUnder :: Subst t a => Nat -> t -> a -> a
 substUnder n u = applySubst (liftS n (singletonS 0 u))
 
-instance Subst a a => Subst a (Substitution' a) where
-  applySubst rho sgm = composeS rho sgm
+instance (Subst a a) => Subst a (Substitution' a) where
+  applySubst = composeS
 
 instance Subst Term Term where
-  applySubst IdS t = t
-  applySubst rho t    = case t of
-    Var i es    -> lookupS rho i `applyE` applySubst rho es
-    Lam h m     -> Lam h $ applySubst rho m
-    Def f es    -> defApp f [] $ applySubst rho es
-    Con c vs    -> Con c $ applySubst rho vs
-    MetaV x es  -> MetaV x $ applySubst rho es
-    Lit l       -> Lit l
-    Level l     -> levelTm $ applySubst rho l
-    Pi a b      -> uncurry Pi $ applySubst rho (a,b)
-    Sort s      -> sortTm $ applySubst rho s
-    Shared p    -> Shared $ applySubst rho p
-    DontCare mv -> dontCare $ applySubst rho mv
+  applySubstM t = askParam >>= \case
+    IdS -> pure t
+    rho -> case t of
+       Var i es    -> applyE <$> pure (lookupS rho i) <*> applySubstM es
+       Lam h m     -> Lam h <$> applySubstM m
+       Def f es    -> defApp f [] <$> applySubstM es
+       Con c vs    -> Con c <$> applySubstM vs
+       MetaV x es  -> MetaV x <$> applySubstM es
+       Lit l       -> pure $ Lit l
+       Level l     -> levelTm <$> applySubstM l
+       Pi a b      -> uncurry Pi <$> applySubstM (a,b)
+       Sort s      -> sortTm <$> applySubstM s
+       Shared p    -> Shared <$> applySubstM p
+       DontCare mv -> dontCare <$> applySubstM mv
 
-instance Subst t a => Subst t (Ptr a) where
-  applySubst rho = fmap (applySubst rho)
+instance (t ~ Term, a ~ Term, Subst t a) => Subst t (Ptr a) where
+  applySubstM = applyFun
 
-instance Subst Term a => Subst Term (Type' a) where
-  applySubst rho (El s t) = applySubst rho s `El` applySubst rho t
+instance (Subst Term a) => Subst Term (Type' a) where
+  applySubstM (El s t) = El <$> applySubstM s <*> applySubstM t
 
 instance Subst Term Sort where
-  applySubst rho s = case s of
-    Type n     -> levelSort $ sub n
-    Prop       -> Prop
-    Inf        -> Inf
-    SizeUniv   -> SizeUniv
-    DLub s1 s2 -> DLub (sub s1) (sub s2)
-    where sub x = applySubst rho x
+  applySubstM s = case s of
+    Type n     -> levelSort <$> sub n
+    Prop       -> pure$ Prop
+    Inf        -> pure$ Inf
+    SizeUniv   -> pure$ SizeUniv
+    DLub s1 s2 -> DLub <$> sub s1 <*> sub s2
+    where sub x = applySubstM x
 
 instance Subst Term Level where
-  applySubst rho (Max as) = Max $ applySubst rho as
+  applySubstM (Max as) = Max <$> applySubstM as
 
 instance Subst Term PlusLevel where
-  applySubst rho l@ClosedLevel{} = l
-  applySubst rho (Plus n l) = Plus n $ applySubst rho l
+  applySubstM l@ClosedLevel{} = pure l
+  applySubstM (Plus n l) = Plus n <$> applySubstM l
 
 instance Subst Term LevelAtom where
-  applySubst rho (MetaLevel m vs)   = MetaLevel m    $ applySubst rho vs
-  applySubst rho (BlockedLevel m v) = BlockedLevel m $ applySubst rho v
-  applySubst rho (NeutralLevel _ v) = UnreducedLevel $ applySubst rho v
-  applySubst rho (UnreducedLevel v) = UnreducedLevel $ applySubst rho v
+  applySubstM (MetaLevel m vs)   = MetaLevel m    <$> applySubstM vs
+  applySubstM (BlockedLevel m v) = BlockedLevel m <$> applySubstM v
+  applySubstM (NeutralLevel _ v) = UnreducedLevel <$> applySubstM v
+  applySubstM (UnreducedLevel v) = UnreducedLevel <$> applySubstM v
 
 instance Subst Term Name where
-  applySubst rho = id
+  applySubstM = pure
 
 #if __GLASGOW_HASKELL__ >= 710
 instance {-# OVERLAPPING #-} Subst Term String where
 #else
 instance Subst Term String where
 #endif
-  applySubst rho = id
+  applySubstM = pure
 
 instance Subst Term ConPatternInfo where
-  applySubst rho (ConPatternInfo mr mt) = ConPatternInfo mr $ applySubst rho mt
+  applySubstM (ConPatternInfo mr mt) = ConPatternInfo mr <$> applySubstM mt
 
 instance Subst Term Pattern where
-  applySubst rho p = case p of
-    ConP c mt ps -> ConP c (applySubst rho mt) $ applySubst rho ps
-    DotP t       -> DotP $ applySubst rho t
-    VarP s       -> p
-    LitP l       -> p
-    ProjP _      -> p
+  applySubstM p = case p of
+    ConP c mt ps -> ConP c <$> (applySubstM mt) <*> applySubstM ps
+    DotP t       -> DotP <$> applySubstM t
+    VarP s       -> pure p
+    LitP l       -> pure p
+    ProjP _      -> pure p
 
 instance Subst Term NLPat where
-  applySubst rho p = case p of
-    PVar id i -> p
-    PWild  -> p
-    PDef f es -> PDef f $ applySubst rho es
-    PLam i u -> PLam i $ applySubst rho u
-    PPi a b -> PPi (applySubst rho a) (applySubst rho b)
-    PBoundVar i es -> PBoundVar i $ applySubst rho es
-    PTerm u -> PTerm $ applySubst rho u
+  applySubstM p = case p of
+    PVar id i -> pure p
+    PWild  -> pure p
+    PDef f es -> PDef f <$> applySubstM es
+    PLam i u -> PLam i <$> applySubstM u
+    PPi a b -> PPi <$> (applySubstM a) <*> (applySubstM b)
+    PBoundVar i es -> PBoundVar i <$> applySubstM es
+    PTerm u -> PTerm <$> applySubstM u
 
 instance Subst Term RewriteRule where
-  applySubst rho (RewriteRule q gamma lhs rhs t) =
-    RewriteRule q (applySubst rho gamma)
-                  (applySubst (liftS n rho) lhs)
-                  (applySubst (liftS n rho) rhs)
-                  (applySubst (liftS n rho) t)
+  applySubstM (RewriteRule q gamma lhs rhs t) = askParam >>= \rho ->
+    (uncurry3 . RewriteRule q <$> (applySubstM gamma))
+      <*> (applySubstM' (liftS n rho) (lhs, rhs, t))
     where n = size gamma
 
-instance Subst t a => Subst t (Blocked a) where
-  applySubst rho b = fmap (applySubst rho) b
+instance (Subst t a) => Subst t (Blocked a) where
+  applySubstM b = traverse (applySubstM) b
 
 instance Subst Term DisplayForm where
-  applySubst rho (Display n ps v) =
-    Display n (applySubst (liftS 1 rho) ps)
-              (applySubst (liftS n rho) v)
+  applySubstM (Display n ps v) = askParam >>= \rho ->
+    Display n <$> (applySubstM' (liftS 1 rho) ps)
+              <*> (applySubstM' (liftS n rho) v)
 
 instance Subst Term DisplayTerm where
-  applySubst rho (DTerm v)        = DTerm $ applySubst rho v
-  applySubst rho (DDot v)         = DDot  $ applySubst rho v
-  applySubst rho (DCon c vs)      = DCon c $ applySubst rho vs
-  applySubst rho (DDef c es)      = DDef c $ applySubst rho es
-  applySubst rho (DWithApp v vs ws) = uncurry3 DWithApp $ applySubst rho (v, vs, ws)
+  applySubstM (DTerm v)        = DTerm <$> applySubstM v
+  applySubstM (DDot v)         = DDot  <$> applySubstM v
+  applySubstM (DCon c vs)      = DCon c <$> applySubstM vs
+  applySubstM (DDef c es)      = DDef c <$> applySubstM es
+  applySubstM (DWithApp v vs ws) = uncurry3 DWithApp <$> applySubstM (v, vs, ws)
 
-instance Subst t a => Subst t (Tele a) where
-  applySubst rho  EmptyTel         = EmptyTel
-  applySubst rho (ExtendTel t tel) = uncurry ExtendTel $ applySubst rho (t, tel)
+instance (Subst t a) => Subst t (Tele a) where
+  applySubstM  EmptyTel         = pure EmptyTel
+  applySubstM (ExtendTel t tel) = uncurry ExtendTel <$> applySubstM (t, tel)
 
 instance Subst Term Constraint where
-  applySubst rho c = case c of
-    ValueCmp cmp a u v       -> ValueCmp cmp (rf a) (rf u) (rf v)
-    ElimCmp ps a v e1 e2     -> ElimCmp ps (rf a) (rf v) (rf e1) (rf e2)
-    TypeCmp cmp a b          -> TypeCmp cmp (rf a) (rf b)
-    TelCmp a b cmp tel1 tel2 -> TelCmp (rf a) (rf b) cmp (rf tel1) (rf tel2)
-    SortCmp cmp s1 s2        -> SortCmp cmp (rf s1) (rf s2)
-    LevelCmp cmp l1 l2       -> LevelCmp cmp (rf l1) (rf l2)
-    Guarded c cs             -> Guarded (rf c) cs
-    IsEmpty r a              -> IsEmpty r (rf a)
-    CheckSizeLtSat t         -> CheckSizeLtSat (rf t)
-    FindInScope m b cands    -> FindInScope m b (rf cands)
-    UnBlock{}                -> c
+  applySubstM c = case c of
+    ValueCmp cmp a u v       -> ValueCmp cmp <$> rf a <*> rf u <*> rf v
+    ElimCmp ps a v e1 e2     -> ElimCmp ps <$> rf a <*> rf v <*> rf e1 <*> rf e2
+    TypeCmp cmp a b          -> TypeCmp cmp <$> rf a <*> rf b
+    TelCmp a b cmp tel1 tel2 -> TelCmp <$> rf a <*> rf b <*> pure cmp <*> rf tel1 <*> rf tel2
+    SortCmp cmp s1 s2        -> SortCmp cmp <$> rf s1 <*> rf s2
+    LevelCmp cmp l1 l2       -> LevelCmp cmp <$> rf l1 <*> rf l2
+    Guarded c cs             -> Guarded <$> rf c <*> pure cs
+    IsEmpty r a              -> IsEmpty r <$> rf a
+    CheckSizeLtSat t         -> CheckSizeLtSat <$> rf t
+    FindInScope m b cands    -> FindInScope m b <$> rf cands
+    UnBlock{}                -> pure c
     where
-      rf x = applySubst rho x
+      rf x = applySubstM x
 
 instance Subst t a => Subst t (Elim' a) where
-  applySubst rho e = case e of
-    Apply v -> Apply $ applySubst rho v
-    Proj{}  -> e
+  applySubstM e = case e of
+    Apply v -> Apply <$> applySubstM v
+    Proj{}  -> pure e
 
 instance Subst t a => Subst t (Abs a) where
-  applySubst rho (Abs x a)   = Abs x $ applySubst (liftS 1 rho) a
-  applySubst rho (NoAbs x a) = NoAbs x $ applySubst rho a
+  applySubstM (Abs x a)   = askParam >>= \rho -> Abs x <$> applySubstM' (liftS 1 rho) a
+  applySubstM (NoAbs x a) = NoAbs x <$> applySubstM a
 
-instance Subst t a => Subst t (Arg a) where
-  applySubst rho = fmap (applySubst rho)
+instance (Subst t a) => Subst t (Arg a) where
+  applySubstM = traverse (applySubstM)
 
-instance Subst t a => Subst t (Named name a) where
-  applySubst rho = fmap (applySubst rho)
+instance (Subst t a) => Subst t (Named name a) where
+  applySubstM = traverse (applySubstM)
 
-instance Subst t a => Subst t (Dom a) where
-  applySubst rho = fmap (applySubst rho)
+instance (Subst t a) => Subst t (Dom a) where
+  applySubstM = traverse (applySubstM)
 
-instance Subst t a => Subst t (Maybe a) where
-  applySubst rho = fmap (applySubst rho)
+instance (Subst t a) => Subst t (Maybe a) where
+  applySubstM = traverse (applySubstM)
 
-instance Subst t a => Subst t [a] where
-  applySubst rho = map (applySubst rho)
+instance (Subst t a) => Subst t [a] where
+  applySubstM = traverse (applySubstM)
 
 instance Subst Term () where
-  applySubst _ _ = ()
+  applySubstM _ = pure ()
 
 instance (Subst t a, Subst t b) => Subst t (a, b) where
-  applySubst rho (x,y) = (applySubst rho x, applySubst rho y)
+  applySubstM (x,y) = (,) <$> applySubstM x <*> applySubstM y
 
 instance (Subst t a, Subst t b, Subst t c) => Subst t (a, b, c) where
-  applySubst rho (x,y,z) = (applySubst rho x, applySubst rho y, applySubst rho z)
+  applySubstM (x,y,z) = (,,) <$> applySubstM x <*> applySubstM y <*> applySubstM z
 
 instance (Subst t a, Subst t b, Subst t c, Subst t d) => Subst t (a, b, c, d) where
-  applySubst rho (x,y,z,u) = (applySubst rho x, applySubst rho y, applySubst rho z, applySubst rho u)
+  applySubstM (x,y,z,u) = (,,,) <$> applySubstM x <*> applySubstM y <*> applySubstM z <*> applySubstM u
 
 instance Subst Term ClauseBody where
-  applySubst rho (Body t) = Body $ applySubst rho t
-  applySubst rho (Bind b) = Bind $ applySubst rho b
-  applySubst _   NoBody   = NoBody
+  applySubstM (Body t) = Body <$> applySubstM t
+  applySubstM (Bind b) = Bind <$> applySubstM b
+  applySubstM  NoBody   = pure NoBody
 
 instance Subst Term Candidate where
-  applySubst rho (Candidate u t eti) = Candidate (applySubst rho u) (applySubst rho t) eti
+  applySubstM (Candidate u t eti) = Candidate <$> applySubstM u <*> applySubstM t <*> pure eti
 
 instance Subst Term EqualityView where
-  applySubst rho (OtherType t) = OtherType
-    (applySubst rho t)
-  applySubst rho (EqualityType s eq l t a b) = EqualityType
-    (applySubst rho s)
-    eq
-    (applySubst rho l)
-    (applySubst rho t)
-    (applySubst rho a)
-    (applySubst rho b)
+  applySubstM (OtherType t) = OtherType <$>
+    (applySubstM t)
+  applySubstM (EqualityType s eq l t a b) = EqualityType <$>
+    (applySubstM s) <*>
+    pure eq <*>
+    (applySubstM l) <*>
+    (applySubstM t) <*>
+    (applySubstM a) <*>
+    (applySubstM b)
 
 ---------------------------------------------------------------------------
 -- * Telescopes

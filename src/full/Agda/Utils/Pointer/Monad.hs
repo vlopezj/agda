@@ -17,13 +17,13 @@ newtype MemoPtrM (f :: Symbol) p a b c = MemoPtrM {
   }
 
 -- | Run computations on pointers while preserving sharing
-runWithMemoPtr :: p -> MemoPtrM f p a b c -> c 
+runWithMemoPtr :: p -> MemoPtrM f p a b c -> c
 runWithMemoPtr p m = snd$ runMemoPtr m p (Map.empty)
 
 localParamMemoPtr :: p -> MemoPtrM f p a b c -> MemoPtrM f p a b c
 localParamMemoPtr p m = MemoPtrM (\_ s -> (s, runWithMemoPtr p m))
 
-askParamMemoPtr :: MemoPtrM f p a b p 
+askParamMemoPtr :: MemoPtrM f p a b p
 askParamMemoPtr = MemoPtrM (\p s -> (s, p))
 
 applyFunMemoPtr :: (a -> MemoPtrM f p a b b) -> Ptr a -> MemoPtrM f p a b (Ptr b)
@@ -38,14 +38,14 @@ applyFunMemoPtr fun a = MemoPtrM (\p s ->
 runWithReader :: p -> (p -> a) -> a
 runWithReader p m = m p
 
-localParamReader :: p -> (p -> a) -> (p -> a)                    
+localParamReader :: p -> (p -> a) -> (p -> a)
 localParamReader p m = \_ -> m p
 
 askParamReader :: p -> p
 askParamReader = id
 
 applyFunReader :: (a -> p -> b) -> Ptr a -> (p -> Ptr b)
-applyFunReader fun a p = fmap (flip fun p) a 
+applyFunReader fun a p = fmap (flip fun p) a
 
 instance Functor (MemoPtrM (f :: Symbol) p a b) where
   fmap f = (>>= (return . f))
@@ -53,7 +53,7 @@ instance Functor (MemoPtrM (f :: Symbol) p a b) where
 instance Applicative (MemoPtrM (f :: Symbol) p a b) where
   pure = return
   f <*> a = f >>= flip fmap a
-         
+
 instance Monad (MemoPtrM (f :: Symbol) p a b) where
   return a = MemoPtrM (\_ s -> (s, a))
   a >>= f = MemoPtrM (\p s ->
