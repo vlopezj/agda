@@ -1,3 +1,25 @@
+..
+  ::
+  module language.function-definitions where
+
+  data Bool : Set where
+     true false : Bool
+
+  data Nat : Set where
+     zero : Nat
+     suc : Nat → Nat
+  {-# BUILTIN NATURAL Nat #-}
+
+  _+_ : Nat → Nat → Nat
+  zero + x = x
+  suc x + y = suc (x + y)
+
+  _*_ : Nat → Nat → Nat
+  zero * x = zero
+  suc x * y = y + (x * y)
+
+  data ⊥ : Set where
+
 .. _function-definitions:
 
 ********************
@@ -29,7 +51,8 @@ General form
 ============
 
 The general form for defining a function is
-::
+
+.. code-block:: agda
 
  f : (x₁ : A₁) → … → (xₙ : Aₙ) → B
  f p₁ … pₙ = d
@@ -137,7 +160,9 @@ a function definition
   max m       zero    = m
   max (suc m) (suc n) = suc (max m n)
 
-will be represented internally as a case tree that looks like this:::
+will be represented internally as a case tree that looks like this:
+
+.. code-block:: agda
 
   max m n = case m of
     zero   -> n
