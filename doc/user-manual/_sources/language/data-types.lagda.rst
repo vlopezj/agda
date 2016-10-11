@@ -22,6 +22,21 @@ In the introduction we already showed the definition of the data type of natural
       zero : Nat
       suc  : Nat → Nat
 
+With syntax highlighting:
+
+.. role:: agda-comment
+.. role:: agda-keyword
+.. role:: agda-symbol
+.. role:: agda-primitive-type
+.. role:: agda-datatype
+.. role:: agda-inductive-constructor
+
+.. parsed-literal::
+
+ :agda-keyword:`data` :agda-datatype:`ℕ` :agda-symbol:`:` :agda-primitive-type:`Set` :agda-keyword:`where`
+     :agda-inductive-constructor:`zero` :agda-symbol:`:` :agda-datatype:`ℕ`
+     :agda-inductive-constructor:`suc`  :agda-symbol:`:` :agda-datatype:`ℕ` :agda-symbol:`→` :agda-datatype:`ℕ`
+
 We give a few more examples. First the data type of truth values:
 ::
 
