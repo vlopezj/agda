@@ -1,0 +1,29 @@
+/* Aspects. */
+.agda-comment        { color: #B22222 }
+.agda-keyword        { color: #CD6600 }
+.agda-string         { color: #B22222 }
+.agda-number         { color: #A020F0 }
+.agda-symbol         { color: #404040 }
+.agda-primitive-type { color: #0000CD }
+.agda-operator       {}
+
+/* Name Kinds. */
+.agda-bound                   { color: black   }
+.agda-inductive-constructor   { color: #008B00 }
+.agda-coinductive-constructor { color: #8B7500 }
+.agda-datatype                { color: #0000CD }
+.agda-field                   { color: #EE1289 }
+.agda-function                { color: #0000CD }
+.agda-module                  { color: #A020F0 }
+.agda-postulate               { color: #0000CD }
+.agda-primitive               { color: #0000CD }
+.agda-record                  { color: #0000CD }
+
+/* Other Aspects. */
+.agda-dotted-pattern      {}
+.agda-unsolved-meta       { color: black; background: yellow         }
+.agda-unsolved-constraint { color: black; background: yellow         }
+.agda-termination-problem { color: black; background: #FFA07A        }
+.agda-incomplete-pattern  { color: black; background: #F5DEB3        }
+.agda-error               { color: red;   text-decoration: underline }
+.agda-type-checks         { color: black; background: #ADD8E6        }
