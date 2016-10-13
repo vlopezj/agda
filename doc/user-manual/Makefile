@@ -229,3 +229,9 @@ highlight:
 	./highlight
 	@echo
 	@echo "Finished highlighting"
+
+.PHONY: highlight-clean
+highlight-clean:
+	find . -name '*.rst' | grep -v _sources | xargs rm -f
+	@echo
+	@echo "Finished cleaning up"

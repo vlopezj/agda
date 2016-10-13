@@ -31,7 +31,7 @@ With syntax highlighting:
 .. role:: agda-datatype
 .. role:: agda-inductive-constructor
 
-.. parsed-literal::
+.. parsed-literal:: :class: agda-block
 
  :agda-keyword:`data` :agda-datatype:`ℕ` :agda-symbol:`:` :agda-primitive-type:`Set` :agda-keyword:`where`
      :agda-inductive-constructor:`zero` :agda-symbol:`:` :agda-datatype:`ℕ`

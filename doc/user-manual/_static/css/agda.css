@@ -27,3 +27,6 @@
 .agda-incomplete-pattern  { color: black; background: #F5DEB3        }
 .agda-error               { color: red;   text-decoration: underline }
 .agda-type-checks         { color: black; background: #ADD8E6        }
+
+/* Literate block */
+.literal-block.agda-block  { padding: 12px !important; }
