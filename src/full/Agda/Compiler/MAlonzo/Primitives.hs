@@ -13,6 +13,7 @@ import Agda.Compiler.ToTreeless
 import {-# SOURCE #-} Agda.Compiler.MAlonzo.Compiler (closedTerm)
 import Agda.Compiler.MAlonzo.Misc
 import Agda.Compiler.MAlonzo.Pretty
+import Agda.Interaction.Options
 import Agda.Syntax.Common
 import Agda.Syntax.Internal
 import Agda.Syntax.Treeless
@@ -25,6 +26,7 @@ import Agda.Utils.Monad
 import Agda.Utils.Except
 import Agda.Utils.Lens
 import qualified Agda.Utils.HashMap as HMap
+
 
 #include "undefined.h"
 import Agda.Utils.Impossible
@@ -116,104 +118,127 @@ xForPrim table = do
 
 -- Definition bodies for primitive functions
 primBody :: String -> TCM HS.Exp
-primBody s = maybe unimplemented (either (hsVarUQ . HS.Ident) id <$>) $
-             L.lookup s $
-  [
-  -- Integer functions
-    "primIntegerPlus"    |-> binAsis "(+)" "Integer"
-  , "primIntegerMinus"   |-> binAsis "(-)" "Integer"
-  , "primIntegerTimes"   |-> binAsis "(*)" "Integer"
-  , "primIntegerDiv"     |-> binAsis "div" "Integer"
-  , "primIntegerMod"     |-> binAsis "mod" "Integer"
-  , "primIntegerEquality"|-> rel "(==)" "Integer"
-  , "primIntegerLess"    |-> rel "(<)"  "Integer"
-  , "primIntegerAbs"     |-> return "(abs :: Integer -> Integer)"
-  , "primNatToInteger"   |-> return "(id :: Integer -> Integer)"
-  , "primShowInteger"    |-> return "(Data.Text.pack . show :: Integer -> Data.Text.Text)"
+primBody s = do
+  cubicalPrims <- (optCubical <$> pragmaOptions) <&> \case
+    False -> []
+    True  ->
+      -- Cubical
+      [ "primPathApply"  |-> return "MAlonzo.RTE.Cubical.primPathApply"
+      , "primPathPApply" |-> return "MAlonzo.RTE.Cubical.primPathPApply"
+      , "primDepIMin"    |-> return "MAlonzo.RTE.Cubical.primDepIMin"
+      , "primINeg"       |-> return "MAlonzo.RTE.Cubical.primINeg"
+      , "primIMin"       |-> return "MAlonzo.RTE.Cubical.primIMin"
+      , "primIMax"       |-> return "MAlonzo.RTE.Cubical.primIMax"
+      , "primIdFace"     |-> return "MAlonzo.RTE.Cubical.primIdFace"
+      , "primIdPath"     |-> return "MAlonzo.RTE.Cubical.primIdPath"
+      , "primIdJ"        |-> return "MAlonzo.RTE.Cubical.primIdJ"
+      , "primSubOut"     |-> return "MAlonzo.RTE.Cubical.primSubOut"
 
-  -- Levels
-  , "primLevelZero"   |-> return "()"
-  , "primLevelSuc"    |-> return "(\\ _ -> ())"
-  , "primLevelMax"    |-> return "(\\ _ _ -> ())"
+      , "primGlue"       |-> return "MAlonzo.RTE.Cubical.primGlue"
+      , "prim^glue"      |-> return "MAlonzo.RTE.Cubical.prim_glue"
+      , "prim^unglue"    |-> return "MAlonzo.RTE.Cubical.prim_unglue"
+      , "primFaceForall" |-> return "MAlonzo.RTE.Cubical.primFaceForall"
+      ]
 
-  -- Natural number functions
-  , "primNatPlus"      |-> binNat "(+)"
-  , "primNatMinus"     |-> binNat "(\\ x y -> max 0 (x - y))"
-  , "primNatTimes"     |-> binNat "(*)"
-  , "primNatDivSucAux" |-> binNat4 "(\\ k m n j -> k + div (max 0 $ n + m - j) (m + 1))"
-  , "primNatModSucAux" |-> binNat4 "(\\ k m n j -> if n > j then mod (n - j - 1) (m + 1) else (k + n))"
-  , "primNatEquality"  |-> relNat "(==)"
-  , "primNatLess"      |-> relNat "(<)"
+  maybe unimplemented (either (hsVarUQ . HS.Ident) id <$>) $
+             L.lookup s $ cubicalPrims ++
+      [
+      -- Integer functions
+        "primIntegerPlus"    |-> binAsis "(+)" "Integer"
+      , "primIntegerMinus"   |-> binAsis "(-)" "Integer"
+      , "primIntegerTimes"   |-> binAsis "(*)" "Integer"
+      , "primIntegerDiv"     |-> binAsis "div" "Integer"
+      , "primIntegerMod"     |-> binAsis "mod" "Integer"
+      , "primIntegerEquality"|-> rel "(==)" "Integer"
+      , "primIntegerLess"    |-> rel "(<)"  "Integer"
+      , "primIntegerAbs"     |-> return "(abs :: Integer -> Integer)"
+      , "primNatToInteger"   |-> return "(id :: Integer -> Integer)"
+      , "primShowInteger"    |-> return "(Data.Text.pack . show :: Integer -> Data.Text.Text)"
 
-  -- Floating point functions
-  , "primNatToFloat"        |-> return "(fromIntegral :: Integer -> Double)"
-  , "primFloatPlus"         |-> return "((+)          :: Double -> Double -> Double)"
-  , "primFloatMinus"        |-> return "((-)          :: Double -> Double -> Double)"
-  , "primFloatTimes"        |-> return "((*)          :: Double -> Double -> Double)"
-  , "primFloatNegate"       |-> return "(negate       :: Double -> Double)"
-  , "primFloatDiv"          |-> return "((/)          :: Double -> Double -> Double)"
-  -- ASR (2016-09-14). We use bitwise equality for comparing Double
-  -- because Haskell's Eq, which equates 0.0 and -0.0, allows to prove
-  -- a contradiction (see Issue #2169).
-  , "primFloatEquality"     |-> return "MAlonzo.RTE.eqFloat"
-  , "primFloatNumericalEquality" |-> return "MAlonzo.RTE.eqNumFloat"
-  , "primFloatNumericalLess" |-> return "MAlonzo.RTE.ltNumFloat"
-  , "primFloatSqrt"         |-> return "(sqrt :: Double -> Double)"
-  , "primRound"             |-> return "(round :: Double -> Integer)"
-  , "primFloor"             |-> return "(floor :: Double -> Integer)"
-  , "primCeiling"           |-> return "(ceiling :: Double -> Integer)"
-  , "primExp"               |-> return "(exp :: Double -> Double)"
-  , "primLog"               |-> return "(log :: Double -> Double)"
-  , "primSin"               |-> return "(sin :: Double -> Double)"
-  , "primCos"               |-> return "(cos :: Double -> Double)"
-  , "primTan"               |-> return "(tan :: Double -> Double)"
-  , "primASin"              |-> return "(asin :: Double -> Double)"
-  , "primACos"              |-> return "(acos :: Double -> Double)"
-  , "primATan"              |-> return "(atan :: Double -> Double)"
-  , "primATan2"             |-> return "(atan2 :: Double -> Double -> Double)"
-  , "primShowFloat"         |-> return "(Data.Text.pack . show :: Double -> Data.Text.Text)"
+      -- Levels
+      , "primLevelZero"   |-> return "()"
+      , "primLevelSuc"    |-> return "(\\ _ -> ())"
+      , "primLevelMax"    |-> return "(\\ _ _ -> ())"
 
-  -- Character functions
-  , "primCharEquality"   |-> rel "(==)" "Char"
-  , "primIsLower"        |-> return "Data.Char.isLower"
-  , "primIsDigit"        |-> return "Data.Char.isDigit"
-  , "primIsAlpha"        |-> return "Data.Char.isAlpha"
-  , "primIsSpace"        |-> return "Data.Char.isSpace"
-  , "primIsAscii"        |-> return "Data.Char.isAscii"
-  , "primIsLatin1"       |-> return "Data.Char.isLatin1"
-  , "primIsPrint"        |-> return "Data.Char.isPrint"
-  , "primIsHexDigit"     |-> return "Data.Char.isHexDigit"
-  , "primToUpper"        |-> return "Data.Char.toUpper"
-  , "primToLower"        |-> return "Data.Char.toLower"
-  , "primCharToNat" |-> return "(fromIntegral . fromEnum :: Char -> Integer)"
-  , "primNatToChar" |-> return "(toEnum . fromIntegral :: Integer -> Char)"
-  , "primShowChar"  |-> return "(Data.Text.pack . show :: Char -> Data.Text.Text)"
+      -- Natural number functions
+      , "primNatPlus"      |-> binNat "(+)"
+      , "primNatMinus"     |-> binNat "(\\ x y -> max 0 (x - y))"
+      , "primNatTimes"     |-> binNat "(*)"
+      , "primNatDivSucAux" |-> binNat4 "(\\ k m n j -> k + div (max 0 $ n + m - j) (m + 1))"
+      , "primNatModSucAux" |-> binNat4 "(\\ k m n j -> if n > j then mod (n - j - 1) (m + 1) else (k + n))"
+      , "primNatEquality"  |-> relNat "(==)"
+      , "primNatLess"      |-> relNat "(<)"
 
-  -- String functions
-  , "primStringToList"   |-> return "Data.Text.unpack"
-  , "primStringFromList" |-> return "Data.Text.pack"
-  , "primStringAppend"   |-> binAsis "Data.Text.append" "Data.Text.Text"
-  , "primStringEquality" |-> rel "(==)" "Data.Text.Text"
-  , "primShowString"     |-> return "(Data.Text.pack . show :: Data.Text.Text -> Data.Text.Text)"
+      -- Floating point functions
+      , "primNatToFloat"        |-> return "(fromIntegral :: Integer -> Double)"
+      , "primFloatPlus"         |-> return "((+)          :: Double -> Double -> Double)"
+      , "primFloatMinus"        |-> return "((-)          :: Double -> Double -> Double)"
+      , "primFloatTimes"        |-> return "((*)          :: Double -> Double -> Double)"
+      , "primFloatNegate"       |-> return "(negate       :: Double -> Double)"
+      , "primFloatDiv"          |-> return "((/)          :: Double -> Double -> Double)"
+      -- ASR (2016-09-14). We use bitwise equality for comparing Double
+      -- because Haskell's Eq, which equates 0.0 and -0.0, allows to prove
+      -- a contradiction (see Issue #2169).
+      , "primFloatEquality"     |-> return "MAlonzo.RTE.eqFloat"
+      , "primFloatNumericalEquality" |-> return "MAlonzo.RTE.eqNumFloat"
+      , "primFloatNumericalLess" |-> return "MAlonzo.RTE.ltNumFloat"
+      , "primFloatSqrt"         |-> return "(sqrt :: Double -> Double)"
+      , "primRound"             |-> return "(round :: Double -> Integer)"
+      , "primFloor"             |-> return "(floor :: Double -> Integer)"
+      , "primCeiling"           |-> return "(ceiling :: Double -> Integer)"
+      , "primExp"               |-> return "(exp :: Double -> Double)"
+      , "primLog"               |-> return "(log :: Double -> Double)"
+      , "primSin"               |-> return "(sin :: Double -> Double)"
+      , "primCos"               |-> return "(cos :: Double -> Double)"
+      , "primTan"               |-> return "(tan :: Double -> Double)"
+      , "primASin"              |-> return "(asin :: Double -> Double)"
+      , "primACos"              |-> return "(acos :: Double -> Double)"
+      , "primATan"              |-> return "(atan :: Double -> Double)"
+      , "primATan2"             |-> return "(atan2 :: Double -> Double -> Double)"
+      , "primShowFloat"         |-> return "(Data.Text.pack . show :: Double -> Data.Text.Text)"
 
-  -- Reflection
-  , "primQNameEquality"   |-> rel "(==)" "MAlonzo.RTE.QName"
-  , "primQNameLess"       |-> rel "(<)" "MAlonzo.RTE.QName"
-  , "primShowQName"       |-> return "Data.Text.pack . MAlonzo.RTE.qnameString"
-  , "primQNameFixity"     |-> return "MAlonzo.RTE.qnameFixity"
-  , "primMetaEquality"    |-> rel "(==)" "Integer"
-  , "primMetaLess"        |-> rel "(<)" "Integer"
-  , "primShowMeta"        |-> return "\\ x -> Data.Text.pack (\"_\" ++ show (x :: Integer))"
+      -- Character functions
+      , "primCharEquality"   |-> rel "(==)" "Char"
+      , "primIsLower"        |-> return "Data.Char.isLower"
+      , "primIsDigit"        |-> return "Data.Char.isDigit"
+      , "primIsAlpha"        |-> return "Data.Char.isAlpha"
+      , "primIsSpace"        |-> return "Data.Char.isSpace"
+      , "primIsAscii"        |-> return "Data.Char.isAscii"
+      , "primIsLatin1"       |-> return "Data.Char.isLatin1"
+      , "primIsPrint"        |-> return "Data.Char.isPrint"
+      , "primIsHexDigit"     |-> return "Data.Char.isHexDigit"
+      , "primToUpper"        |-> return "Data.Char.toUpper"
+      , "primToLower"        |-> return "Data.Char.toLower"
+      , "primCharToNat" |-> return "(fromIntegral . fromEnum :: Char -> Integer)"
+      , "primNatToChar" |-> return "(toEnum . fromIntegral :: Integer -> Char)"
+      , "primShowChar"  |-> return "(Data.Text.pack . show :: Char -> Data.Text.Text)"
 
-  -- Seq
-  , "primForce"      |-> return "\\ _ _ _ _ x f -> f $! x"
-  , "primForceLemma" |-> return "erased"
+      -- String functions
+      , "primStringToList"   |-> return "Data.Text.unpack"
+      , "primStringFromList" |-> return "Data.Text.pack"
+      , "primStringAppend"   |-> binAsis "Data.Text.append" "Data.Text.Text"
+      , "primStringEquality" |-> rel "(==)" "Data.Text.Text"
+      , "primShowString"     |-> return "(Data.Text.pack . show :: Data.Text.Text -> Data.Text.Text)"
 
-  -- Trust me
-  , ("primTrustMe"       , Right <$> do
-       refl <- primRefl
-       closedTerm =<< (closedTermToTreeless $ lam "a" (lam "A" (lam "x" (lam "y" refl)))))
-  ]
+      -- Reflection
+      , "primQNameEquality"   |-> rel "(==)" "MAlonzo.RTE.QName"
+      , "primQNameLess"       |-> rel "(<)" "MAlonzo.RTE.QName"
+      , "primShowQName"       |-> return "Data.Text.pack . MAlonzo.RTE.qnameString"
+      , "primQNameFixity"     |-> return "MAlonzo.RTE.qnameFixity"
+      , "primMetaEquality"    |-> rel "(==)" "Integer"
+      , "primMetaLess"        |-> rel "(<)" "Integer"
+      , "primShowMeta"        |-> return "\\ x -> Data.Text.pack (\"_\" ++ show (x :: Integer))"
+
+      -- Seq
+      , "primForce"      |-> return "\\ _ _ _ _ x f -> f $! x"
+      , "primForceLemma" |-> return "erased"
+
+
+      -- Trust me
+      , ("primTrustMe"       , Right <$> do
+           refl <- primRefl
+           closedTerm =<< (closedTermToTreeless $ lam "a" (lam "A" (lam "x" (lam "y" refl)))))
+      ]
   where
   x |-> s = (x, Left <$> s)
   bin blt op ty from to = do

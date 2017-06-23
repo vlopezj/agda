@@ -185,6 +185,9 @@ rtmUnreachableError = mazUnreachableError
 mazRTE :: HS.ModuleName
 mazRTE = HS.ModuleName "MAlonzo.RTE"
 
+mazRTECubical :: HS.ModuleName
+mazRTECubical = HS.ModuleName "MAlonzo.RTE.Cubical"
+
 rtmQual :: String -> HS.QName
 rtmQual = HS.UnQual . HS.Ident
 

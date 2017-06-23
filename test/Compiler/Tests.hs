@@ -89,7 +89,8 @@ tests = do
         <$> sequence
             [ Just <$> simpleTests comp
             , Just <$> stdlibTests comp
-            , specialTests comp]
+            , specialTests comp
+            , cubicalTests comp]
 
 simpleTests :: Compiler -> IO TestTree
 simpleTests comp = do
@@ -148,6 +149,29 @@ specialTests MAlonzo = do
             -- ignore stderr, as there may be some GHC warnings in it
             return $ ExecutedProg (ret, out <> sout, err)
 specialTests JS = return Nothing
+
+cubicalTests :: Compiler -> IO (Maybe TestTree)
+cubicalTests MAlonzo = do
+  let testDir = "test" </> "Compiler" </> "cubical"
+  inps <- getAgdaFilesInDir NonRec testDir
+
+  let stdlibArgs :: [String]
+      stdlibArgs = [ "-i" ++ testDir, "-i" ++ "std-lib" </> "src", "-istd-lib" ]
+
+  tests' <- forM inps $ \inp -> do
+    opts <- readOptions inp
+    return $
+      agdaRunProgGoldenTest testDir MAlonzo
+        (return $ ["-i" ++ testDir </> "Lib", "-itest/"] ++ compArgs MAlonzo ++ stdlibArgs ++
+         ["--cubical"]) inp opts
+  return $ Just $ testGroup "cubical" $ catMaybes tests'
+
+  where compArgs :: Compiler -> AgdaArgs
+        compArgs MAlonzo = ghcArgsAsAgdaArgs ["-itest/"]
+        compArgs JS = []
+
+cubicalTests JS = return Nothing
+
 
 ghcArgsAsAgdaArgs :: GHCArgs -> AgdaArgs
 ghcArgsAsAgdaArgs = map f

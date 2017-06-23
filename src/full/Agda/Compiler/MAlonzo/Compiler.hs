@@ -185,9 +185,13 @@ ghcCompileDef _ = definition
 --------------------------------------------------
 
 imports :: TCM [HS.ImportDecl]
-imports = (hsImps ++) <$> imps where
-  hsImps :: [HS.ImportDecl]
-  hsImps = [unqualRTE, decl mazRTE]
+imports = (++) <$> hsImps <*> imps where
+  hsImps :: TCM [HS.ImportDecl]
+  hsImps = do
+    declCubical <- (optCubical <$> pragmaOptions) <&> \case
+        True  -> [decl mazRTECubical]
+        False -> []
+    return$ unqualRTE:decl mazRTE:declCubical
 
   unqualRTE :: HS.ImportDecl
   unqualRTE = HS.ImportDecl mazRTE False $ Just $

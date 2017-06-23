@@ -68,6 +68,7 @@ data-files:         Agda.css
                     lib/prim/Agda/Builtin/Unit.agda
                     lib/prim/Agda/Primitive.agda
                     MAlonzo/src/MAlonzo/*.hs
+                    MAlonzo/src/MAlonzo/RTE/*.hs
                     postprocess-latex.pl
 
 source-repository head
