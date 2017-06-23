@@ -75,6 +75,8 @@ disabledTests =
   [ -- See issue 1528
     RFInclude "Compiler/.*/simple/Sharing"
   , RFInclude "Compiler/JS/simple/VecReverseIrr"
+  , RFInclude "Compiler/MAlonzo/cubical/CatchAllVarArity"
+  , RFInclude "Compiler/MAlonzo/cubical/Sharing"
   ]
 
 tests :: IO TestTree
@@ -92,8 +94,8 @@ tests = do
             , specialTests comp
             , cubicalTests comp]
 
-simpleTests :: Compiler -> IO TestTree
-simpleTests comp = do
+simpleTestsList :: Compiler -> [String] -> IO [TestTree]
+simpleTestsList comp extraArgs = do
   let testDir = "test" </> "Compiler" </> "simple"
   inps <- getAgdaFilesInDir NonRec testDir
 
@@ -101,12 +103,17 @@ simpleTests comp = do
     opts <- readOptions inp
     return $
       agdaRunProgGoldenTest testDir comp
-        (return $ ["-i" ++ testDir, "-itest/"] ++ compArgs comp) inp opts
-  return $ testGroup "simple" $ catMaybes tests'
+        (return $ ["-i" ++ testDir, "-itest/"] ++ compArgs comp ++ extraArgs) inp opts
 
+  return$ catMaybes tests'
   where compArgs :: Compiler -> AgdaArgs
         compArgs MAlonzo = ghcArgsAsAgdaArgs ["-itest/"]
         compArgs JS = []
+
+simpleTests :: Compiler -> IO TestTree
+simpleTests comp = do
+  tests' <- simpleTestsList comp [] 
+  return $ testGroup "simple" $ tests'
 
 -- The Compiler tests using the standard library are horribly
 -- slow at the moment (1min or more per test case).
@@ -163,8 +170,11 @@ cubicalTests MAlonzo = do
     return $
       agdaRunProgGoldenTest testDir MAlonzo
         (return $ ["-i" ++ testDir </> "Lib", "-itest/"] ++ compArgs MAlonzo ++ stdlibArgs ++
-         ["--cubical"]) inp opts
-  return $ Just $ testGroup "cubical" $ catMaybes tests'
+          ["--cubical"]) inp opts
+
+  tests'Simple <- simpleTestsList MAlonzo ["--cubical"] 
+
+  return $ Just $ testGroup "cubical" $ catMaybes tests' ++ tests'Simple
 
   where compArgs :: Compiler -> AgdaArgs
         compArgs MAlonzo = ghcArgsAsAgdaArgs ["-itest/"]
