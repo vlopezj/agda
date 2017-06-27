@@ -7,6 +7,7 @@ open import Common.Nat
 open import Common.String
 open import Common.Unit
 open import Common.Float
+open import Common.Maybe
 
 infixl 1 _>>=_
 
@@ -32,9 +33,11 @@ postulate
 {-# FOREIGN GHC import qualified Data.Text.IO #-}
 
 postulate
-  putStr     : String -> IO Unit
+  putStr    : String -> IO Unit
+  getLine   : IO String
 
 {-# COMPILE GHC putStr = Data.Text.IO.putStr #-}
+{-# COMPILE GHC getLine = Data.Text.IO.getLine #-}
 {-# COMPILE UHC putStr = UHC.Agda.Builtins.primPutStr #-}
 {-# COMPILE JS putStr = function (x) { return function(cb) { process.stdout.write(x); cb(0); }; } #-}
 
@@ -69,3 +72,11 @@ then m f = m >>= λ _ -> f
 
 syntax bind e (\ x -> f) = x <- e , f
 syntax then e f          = e ,, f
+
+stringToBool : String -> Maybe Bool
+stringToBool "true" = just true 
+stringToBool "false" = just false 
+stringToBool _ = nothing 
+
+readBool : IO (Maybe Bool)
+readBool = stringToBool <$> getLine
