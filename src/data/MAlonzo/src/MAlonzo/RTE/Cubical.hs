@@ -19,7 +19,7 @@ module MAlonzo.RTE.Cubical (
   prim_unglue,
   primFaceForall,
   primComp,
-  primIsOneEmpty
+  primIsOneEmpty,
   ) where
 
 import MAlonzo.RTE
@@ -87,10 +87,13 @@ primINeg = iNeg
 type Path a = PathP
 newtype PathP = PathP { path :: Interval -> Any }  
 
-data Any where Any :: forall a. a -> Any
+newtype Any = Any { unAny :: forall a. a }
+
+mkAny :: a -> Any
+mkAny a = Any (coe a)
 
 coeAny :: Any -> b
-coeAny (Any a) = coe a
+coeAny (Any a) = a
 
 primPathApply :: Path a -> Interval -> a
 primPathApply (PathP p) i = coeAny (p i)
@@ -133,12 +136,12 @@ primSubOut _a _A _φ u (Inc a) = error "primSubOut"
 
 data Glue
 
-primGlue :: Level -> Level -> El a -> Face -> (Partial a -> PartialP)
+primGlue :: Level -> Level -> El a -> Face -> (Partial a -> Partial b)
          -> PartialP -> El Glue
 primGlue = error "primGlue"
 
 prim_glue :: Level -> Level -> El a -> Face -> Partial (El b)
-          -> PartialP 
+          -> PartialP
           -> PartialP
           -> PartialP -> Glue
 prim_glue _a _b _A _φ _T _f _pf = error "prim_glue"
@@ -149,10 +152,8 @@ prim_unglue _a _b _A _φ _T _f _pf _G = error "prim_unglue"
 primFaceForall :: (Interval -> Interval) -> Interval
 primFaceForall f = error "primFaceForall" {- IMax (f I0) (f I1)? -}
         
-newtype Partial a = Partial { partial :: [(Interval,a)] }
-
-type PartialP = Partial Any
- 
+type Partial a = IsOne -> a 
+type PartialP  = Partial Any
 
 data El a where
   El :: () -> El a
