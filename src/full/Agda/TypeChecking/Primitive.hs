@@ -1172,7 +1172,7 @@ primIsOneEmpty' = do
                     hPi' "A" (pPi' "o" (cl primIZero) $ \ _ ->
                                    el' (cl primLevelSuc <@> l) (Sort . tmSort <$> l)) $ \ bA ->
                     pPi' "o" (cl primIZero) (\ o -> el' l $ gApply' (setRelevance Irrelevant defaultArgInfo) bA o)
-  builtinPostulatePrimImpl t 8
+  builtinPostulatePrimImpl t 3
 
 decomposeInterval :: HasBuiltins m => Term -> m [(Map Int Bool,[Term])]
 decomposeInterval t = do
