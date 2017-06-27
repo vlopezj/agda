@@ -1161,6 +1161,19 @@ primFaceForall' = do
          [(m,[_])] | Map.null m -> Nothing
          v                      -> r
 
+builtinPostulatePrimImpl :: Type' Term -> Arity -> TCM PrimitiveImpl
+builtinPostulatePrimImpl t nargs = return $ PrimImpl t $ PrimFun __IMPOSSIBLE__ nargs $ \args ->
+  return$ NoReduction$ map notReduced args
+
+primIsOneEmpty' :: TCM PrimitiveImpl
+primIsOneEmpty' = do
+  t <- runNamesT [] $
+                    hPi' "l" (el $ cl primLevel) $ \ l ->
+                    hPi' "A" (pPi' "o" (cl primIZero) $ \ _ ->
+                                   el' (cl primLevelSuc <@> l) (Sort . tmSort <$> l)) $ \ bA ->
+                    pPi' "o" (cl primIZero) (\ o -> el' l $ gApply' (setRelevance Irrelevant defaultArgInfo) bA o)
+  builtinPostulatePrimImpl t 8
+
 decomposeInterval :: HasBuiltins m => Term -> m [(Map Int Bool,[Term])]
 decomposeInterval t = do
   xs <- decomposeInterval' t
@@ -1674,6 +1687,7 @@ primitiveFunctions = Map.fromList
   , "primPartial"         |-> primPartial'
   , "primPartialP"        |-> primPartialP'
   , "primPathAbs"         |-> primPathAbs'
+  , "primIsOneEmpty"      |-> primIsOneEmpty'
   , builtinGlue           |-> primGlue'
   , builtin_glue          |-> prim_glue'
   , builtin_unglue        |-> prim_unglue'

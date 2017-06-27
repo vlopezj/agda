@@ -133,6 +133,8 @@ primBody s = do
       , "primIdPath"     |-> return "MAlonzo.RTE.Cubical.primIdPath"
       , "primIdJ"        |-> return "MAlonzo.RTE.Cubical.primIdJ"
       , "primSubOut"     |-> return "MAlonzo.RTE.Cubical.primSubOut"
+      , "primComp"       |-> return "MAlonzo.RTE.Cubical.primComp"
+      , "primIsOneEmpty" |-> return "MAlonzo.RTE.Cubical.primIsOneEmpty"
 
       , "primGlue"       |-> return "MAlonzo.RTE.Cubical.primGlue"
       , "prim^glue"      |-> return "MAlonzo.RTE.Cubical.prim_glue"

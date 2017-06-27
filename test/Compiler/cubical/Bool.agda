@@ -75,9 +75,13 @@ open import Common.Unit
 main : IO Unit
 main =
   putStrLn  "Test 1"      ,,
-  -- printBool (test₁ true)  ,,
-  -- printBool (test₁ false) ,,
+  printBool (test₁ true)  ,,
+  putStrLn "" ,,
+  printBool (test₁ false) ,,
+  putStrLn "" ,,
   putStrLn  "Test 2"      ,,
-  -- printBool (test₂ true)  ,,
-  -- printBool (test₂ false) ,,
+  printBool (test₂ true)  ,,
+  putStrLn "" ,,
+  printBool (test₂ false) ,,
+  putStrLn "" ,,
   return    unit

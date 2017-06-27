@@ -17,7 +17,9 @@ module MAlonzo.RTE.Cubical (
   primGlue,
   prim_glue,
   prim_unglue,
-  primFaceForall
+  primFaceForall,
+  primComp,
+  primIsOneEmpty
   ) where
 
 import MAlonzo.RTE
@@ -164,7 +166,9 @@ primComp a φ p a0 =
   let !i = mkInterval a in
   case a i of
     El () -> coe a0 
-  
+
+primIsOneEmpty :: IsOne {- IsOne 0 -} -> a
+primIsOneEmpty _ = error "isOneEmpty"
 
   
    

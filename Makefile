@@ -255,7 +255,7 @@ compiler-test :
 	@echo "======================================================================"
 	@echo "========================== Compiler tests ============================"
 	@echo "======================================================================"
-	@AGDA_BIN=$(AGDA_BIN) $(AGDA_TESTS_BIN) $(AGDA_TESTS_OPTIONS) --regex-include all/Compiler
+	@AGDA_BIN=$(AGDA_BIN) $(AGDA_TESTS_BIN) $(AGDA_TESTS_OPTIONS) --regex-include all/Compiler/MAlonzo/cubical
 
 .PHONY : api-test
 api-test :
