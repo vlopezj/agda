@@ -1,7 +1,6 @@
 {-# OPTIONS --cubical #-}
 module Apply where
 
-open import Lib.Primitives public
 open import Level
 open import Data.Bool using (Bool; true; false)
 open import Lib.PathPrelude

@@ -1,7 +1,6 @@
 {-# OPTIONS --cubical #-}
 module Bool where
 
-open import Lib.Primitives public
 open import Level
 open import Data.Bool using (Bool; true; false)
 open import Data.Product public using (Σ; _,_) renaming (proj₁ to fst; proj₂ to snd)
