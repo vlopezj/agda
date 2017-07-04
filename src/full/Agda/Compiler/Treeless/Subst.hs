@@ -29,11 +29,12 @@ instance Subst TTerm TTerm where
       TSort{}   -> t
       TErased{} -> t
       TError{}  -> t
-      TVar i         -> lookupS rho i
-      TApp f ts      -> tApp (applySubst rho f) (applySubst rho ts)
-      TLam b         -> TLam (applySubst (liftS 1 rho) b)
-      TLet e b       -> TLet (applySubst rho e) (applySubst (liftS 1 rho) b)
-      TCase i t d bs ->
+      TVar i          -> lookupS rho i
+      TApp f ts       -> tApp (applySubst rho f) (applySubst rho ts)
+      TLam b          -> TLam (applySubst (liftS 1 rho) b)
+      TPi a b -> TPi (applySubst rho a) (applySubst (liftS 1 rho) b)
+      TLet e b        -> TLet (applySubst rho e) (applySubst (liftS 1 rho) b)
+      TCase i t d bs  ->
         case applySubst rho (TVar i) of
           TVar j  -> TCase j t (applySubst rho d) (applySubst rho bs)
           e       -> TLet e $ TCase 0 t (applySubst rho' d) (applySubst rho' bs)
@@ -117,6 +118,7 @@ instance HasFree TTerm where
     TLam b         -> underLambda <$> freeVars (Binder 1 b)
     TLet e b       -> freeVars (e, Binder 1 b)
     TCase i _ d bs -> freeVars (i, (d, bs))
+    TPi a b -> freeVars a <> (underLambda <$> freeVars (Binder 1 b))
 
 instance HasFree TAlt where
   freeVars a = case a of

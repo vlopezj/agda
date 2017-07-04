@@ -53,6 +53,8 @@ data TTerm = TVar Int
            | TSort
            | TErased
            | TError TError
+             -- codes for types … used only in cubical
+           | TPi TTerm TTerm
            -- ^ A runtime error, something bad has happened.
   deriving (Typeable, Data, Show, Eq, Ord)
 

@@ -403,6 +403,7 @@ compileTerm' kit t = go t
       T.TUnit -> unit
       T.TSort -> unit
       T.TErased -> unit
+      T.TPi{} -> unit
       T.TError T.TUnreachable -> return Undefined
 
     unit = return $ Integer 0

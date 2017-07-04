@@ -310,11 +310,11 @@ definition kit Defn{defName = q, defType = ty, theDef = d} = do
         computeErasedConstructorArgs q
         ccscov <- constructorCoverageCode q (np + ni) cs ty hsCons
         cds <- mapM compiledcondecl cs
-        return $ tvaldecl q (dataInduction d) 0 (np + ni) [] (Just __IMPOSSIBLE__) ++ cds ++ ccscov
+        return $ tvaldecl q (dataInduction d) 0 (np + ni) [] (Just __IMPOSSIBLE__) (mazElData) ++ cds ++ ccscov
       Datatype{ dataPars = np, dataIxs = ni, dataClause = cl, dataCons = cs } -> do
         computeErasedConstructorArgs q
         (ars, cds) <- unzip <$> mapM condecl cs
-        return $ tvaldecl q (dataInduction d) (List.maximum (np:ars) - np) (np + ni) cds cl
+        return $ tvaldecl q (dataInduction d) (List.maximum (np:ars) - np) (np + ni) cds cl (mazElData)
       Constructor{} -> return []
       Record{ recPars = np, recClause = cl, recConHead = con }
         | Just (HsData r ty hsCons) <- pragma -> setCurrentRange r $ do
@@ -322,14 +322,14 @@ definition kit Defn{defName = q, defType = ty, theDef = d} = do
         computeErasedConstructorArgs q
         ccscov <- constructorCoverageCode q np cs ty hsCons
         cds <- mapM compiledcondecl cs
-        return $ tvaldecl q Inductive 0 np [] (Just __IMPOSSIBLE__) ++ cds ++ ccscov
+        return $ tvaldecl q Inductive 0 np [] (Just __IMPOSSIBLE__) (mazElData) ++ cds ++ ccscov
       Record{ recClause = cl, recConHead = con, recFields = flds } -> do
         computeErasedConstructorArgs q
         let c = conName con
         let noFields = length flds
         let ar = I.arity ty
         cd <- snd <$> condecl c
-        return $ tvaldecl q Inductive noFields ar [cd] cl
+        return $ tvaldecl q Inductive noFields ar [cd] cl (mazElData)
       AbstractDefn -> __IMPOSSIBLE__
   where
   function :: Maybe HaskellPragma -> TCM [HS.Decl] -> TCM [HS.Decl]
@@ -513,10 +513,7 @@ term tm0 = case tm0 of
   T.TApp t ts -> do
     t' <- term t
     t' `apps` ts
-  T.TLam at -> do
-    (nm:_) <- asks ccNameSupply
-    intros 1 $ \ [x] ->
-      hsLambda [HS.PVar x] <$> term at
+  T.TLam at -> termAbs at
   T.TLet t1 t2 -> do
     t1' <- term t1
     intros 1 $ \[x] -> do
@@ -541,12 +538,18 @@ term tm0 = case tm0 of
   T.TErased  -> return $ hsVarUQ $ HS.Ident mazErasedName
   T.TError e -> return $ case e of
     T.TUnreachable ->  rtmUnreachableError
+  T.TPi a b  -> pragmaOptions <&> optCubical >>= \case
+      True  -> HS.App <$> (HS.App mazElPi <$> term a) <*> termAbs b
+      False -> return HS.unit_con
   where apps =  foldM (\ h a -> HS.App h <$> term a)
         etaExpand n t =
           foldr (const T.TLam)
                 (T.mkTApp (raise n t) [T.TVar i | i <- [n - 1, n - 2..0]])
                 (replicate n ())
-
+        termAbs at = do
+                       (nm:_) <- asks ccNameSupply
+                       intros 1 $ \ [x] ->
+                         hsLambda [HS.PVar x] <$> term at
 
 compilePrim :: T.TPrim -> HS.Exp
 compilePrim s = HS.Var $ hsName $ treelessPrimName s
@@ -683,9 +686,15 @@ compiledcondecl q = do
 tvaldecl :: QName
          -> Induction
             -- ^ Is the type inductive or coinductive?
-         -> Nat -> Nat -> [HS.ConDecl] -> Maybe Clause -> [HS.Decl]
-tvaldecl q ind ntv npar cds cl =
-  HS.FunBind [HS.Match vn pvs (HS.UnGuardedRhs HS.unit_con) emptyBinds] :
+         -> Nat
+         -> Nat
+         -> [HS.ConDecl]
+         -> Maybe Clause
+         -> HS.Exp
+            -- ^ Reified value for the type
+         -> [HS.Decl]
+tvaldecl q ind ntv npar cds cl rei =
+  HS.FunBind [HS.Match vn pvs (HS.UnGuardedRhs rei) emptyBinds] :
   maybe [HS.DataDecl kind tn tvs cds []]
         (const []) cl
   where

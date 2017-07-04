@@ -23,6 +23,7 @@ uncase t = case t of
   TDef{}    -> t
   TApp f es -> tApp (uncase f) (map uncase es)
   TLam b    -> TLam $ uncase b
+  TPi a b   -> TPi (uncase a) (uncase b)
   TLit{}    -> t
   TCon{}    -> t
   TLet e b  -> tLet (uncase e) (uncase b)

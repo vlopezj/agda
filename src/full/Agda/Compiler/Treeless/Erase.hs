@@ -35,6 +35,8 @@ import Agda.Utils.Lens
 import Agda.Utils.Memo
 import qualified Agda.Utils.Pretty as P
 
+import Agda.Interaction.Options
+
 #include "undefined.h"
 
 data ESt = ESt { _funMap  :: Map QName FunInfo
@@ -92,6 +94,7 @@ eraseTerms q = runE . eraseTop q
         TCon{}         -> pure t
         TApp f es      -> tApp <$> erase f <*> mapM erase es
         TLam b         -> tLam <$> erase b
+        TPi a b        -> tLam <$> erase b
         TLet e b       -> do
           e <- erase e
           if isErased e
@@ -220,7 +223,12 @@ getTypeInfo t0 = do
   (tel, t) <- lift $ telListView t0
   et <- case ignoreSharing $ I.unEl t of
     I.Def d _ -> typeInfo d
-    Sort{}    -> return Erasable
+    Sort (Type{})    -> do
+      -- In cubical, elements of Set need to carry composition information
+      pragmaOptions <&> optCubical >>= \case
+        True  -> return NotErasable
+        False -> return Erasable
+    Sort _           -> return Erasable
     _         -> return NotErasable
   is <- mapM (getTypeInfo . snd . dget) tel
   let e | any (== Empty) is = Erasable

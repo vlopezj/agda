@@ -52,6 +52,7 @@ eliminateCaseDefaults = tr
       TErased{} -> tt
       TError{}  -> tt
 
+      TPi a b                 -> TPi <$> tr a <*> tr b
       TLam b                  -> TLam <$> tr b
       TApp a bs               -> TApp <$> tr a <*> mapM tr bs
       TLet e b                -> TLet <$> tr e <*> tr b

@@ -94,6 +94,7 @@ trivialIdentity q t =
         TSort{}            -> notId
         TErased{}          -> notId
         TError{}           -> notId
+        TPi{}              -> notId
 
     goAlt :: Int -> TAlt -> IdentityIn
     goAlt k (TALit _ b)   = go k b

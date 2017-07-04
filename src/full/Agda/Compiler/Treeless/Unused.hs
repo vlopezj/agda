@@ -43,6 +43,7 @@ computeUnused q t used = do
 
       TApp f ts -> Set.unions <$> mapM go (f : ts)
       TLam b    -> underBinder <$> go b
+      TPi a b   -> Set.union <$> go a <*> (underBinder <$> go b)
       TLet e b  -> Set.union <$> go e <*> (underBinder <$> go b)
       TCase x _ d bs -> Set.insert x . Set.unions <$> ((:) <$> go d <*> mapM goAlt bs)
       TUnit{}   -> pure Set.empty

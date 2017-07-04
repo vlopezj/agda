@@ -149,6 +149,15 @@ pTerm t = case t of
 
   TUnit -> pure $ text "()"
   TSort -> pure $ text "Set"
+  TPi a b -> paren 0 $ withNames 1 $ \xs -> do
+    pa <- pTerm' 0 a
+    pb <- bindNames xs $ pTerm' 0 b
+    return$ sep [ text ("Π (" ++ unwords xs)
+                , text ":"
+                , nest 2 pa
+                , text ")"
+                , nest 4 pb
+                ] 
   TErased -> pure $ text "_"
   TError err -> paren 9 $ pure $ text "error" <+> text (show (show err))
 

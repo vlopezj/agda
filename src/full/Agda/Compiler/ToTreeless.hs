@@ -338,9 +338,7 @@ substTerm term = normaliseStatic term >>= \ term ->
       let args = fromMaybe __IMPOSSIBLE__ $ I.allApplyElims es
       C.mkTApp (C.TVar ind') <$> substArgs args
     I.Lam _ ab ->
-      C.TLam <$>
-        local (\e -> e { ccCxt = 0 : (shift 1 $ ccCxt e) })
-          (substTerm $ I.unAbs ab)
+      C.TLam <$> substAbs ab
     I.Lit l -> return $ C.TLit l
     I.Level _ -> return C.TUnit
     I.Def q es -> do
@@ -350,10 +348,15 @@ substTerm term = normaliseStatic term >>= \ term ->
         c' <- lift $ canonicalName $ I.conName c
         C.mkTApp (C.TCon c') <$> substArgs args
     I.Shared _ -> __IMPOSSIBLE__ -- the ignoreSharing fun should already take care of this
-    I.Pi _ _ -> return C.TUnit
     I.Sort _  -> return C.TSort
     I.MetaV _ _ -> __IMPOSSIBLE__   -- we don't compiled if unsolved metas
     I.DontCare _ -> return C.TErased
+    -- Types
+    I.Pi a b -> C.TPi <$> substTerm (I.unEl (unDom a)) <*> substAbs (fmap I.unEl b)
+  where
+    substAbs :: I.Abs I.Term -> CC C.TTerm
+    substAbs ab = local (\e -> e { ccCxt = 0 : (shift 1 $ ccCxt e) })
+                    (substTerm $ I.unAbs ab)
 
 normaliseStatic :: I.Term -> CC I.Term
 normaliseStatic v@(I.Def f es) = lift $ do

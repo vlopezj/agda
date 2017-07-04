@@ -185,9 +185,6 @@ rtmUnreachableError = mazUnreachableError
 mazRTE :: HS.ModuleName
 mazRTE = HS.ModuleName "MAlonzo.RTE"
 
-mazRTECubical :: HS.ModuleName
-mazRTECubical = HS.ModuleName "MAlonzo.RTE.Cubical"
-
 rtmQual :: String -> HS.QName
 rtmQual = HS.UnQual . HS.Ident
 
@@ -200,6 +197,19 @@ rtmError s = rtmVar "error" `HS.App`
 
 unsafeCoerceMod :: HS.ModuleName
 unsafeCoerceMod = HS.ModuleName "Unsafe.Coerce"
+
+--------------------------------------------------
+-- Hard coded cubical names
+--------------------------------------------------
+
+mazRTECubical :: HS.ModuleName
+mazRTECubical = HS.ModuleName "MAlonzo.RTE.Cubical"
+
+mazElPi :: HS.Exp
+mazElPi = HS.Var $ HS.Qual mazRTECubical $ HS.Ident "ElPi" 
+
+mazElData :: HS.Exp
+mazElData = rtmError "elData not defined"
 
 --------------------------------------------------
 -- Sloppy ways to declare <name> = <string>

@@ -259,7 +259,7 @@ primBody s = do
       "(<<0>> :: Integer -> Integer -> Bool)"
   rel op ty  = rel' "" op ty
   opty t = t ++ "->" ++ t ++ "->" ++ t
-  axiom_prims = ["primIMin","primIMax","primINeg","primPartial","primPartialP","primPFrom1","primPOr","primComp"]
+  axiom_prims = ["primIMin","primIMax","primINeg","primPartial","primPartialP","primPFrom1","primPOr","primComp","primIsOneEmpty"]
   unimplemented | s `L.elem` axiom_prims = return $ rtmError $ "primitive with no body evaluated: " ++ s
                 | otherwise = typeError $ NotImplemented s
 

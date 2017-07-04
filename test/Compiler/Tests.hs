@@ -94,9 +94,8 @@ tests = do
             , specialTests comp
             , cubicalTests comp]
 
-simpleTestsList :: Compiler -> [String] -> IO [TestTree]
-simpleTestsList comp extraArgs = do
-  let testDir = "test" </> "Compiler" </> "simple"
+simpleTestsList :: FilePath -> Compiler -> [String] -> IO [TestTree]
+simpleTestsList testDir comp extraArgs = do
   inps <- getAgdaFilesInDir NonRec testDir
 
   tests' <- forM inps $ \inp -> do
@@ -112,7 +111,8 @@ simpleTestsList comp extraArgs = do
 
 simpleTests :: Compiler -> IO TestTree
 simpleTests comp = do
-  tests' <- simpleTestsList comp [] 
+  let testDir = "test" </> "Compiler" </> "simple"
+  tests' <- simpleTestsList testDir comp [] 
   return $ testGroup "simple" $ tests'
 
 -- The Compiler tests using the standard library are horribly
@@ -172,7 +172,8 @@ cubicalTests MAlonzo = do
         (return $ ["-i" ++ testDir </> "Lib", "-itest/"] ++ compArgs MAlonzo ++ stdlibArgs ++
           ["--cubical"]) inp opts
 
-  tests'Simple <- simpleTestsList MAlonzo ["--cubical"] 
+  let testDirSimple = "test" </> "Compiler" </> "cubical-simple"
+  tests'Simple <- simpleTestsList testDirSimple MAlonzo ["--cubical"] 
 
   return $ Just $ testGroup "cubical" $ catMaybes tests' ++ tests'Simple
 
@@ -249,7 +250,7 @@ agdaRunProgGoldenTest1 dir comp extraArgs inp opts cont
           )
 
         argsForComp :: Compiler -> IO [String]
-        argsForComp MAlonzo = return ["--compile"]
+        argsForComp MAlonzo{} = return ["--compile"]
         argsForComp JS = return ["--js"]
 
 readOptions :: FilePath -- file name of the agda file

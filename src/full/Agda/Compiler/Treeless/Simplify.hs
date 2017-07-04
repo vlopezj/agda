@@ -100,6 +100,7 @@ simplify FunctionKit{..} = simpl
         f  <- simpl f
         es <- traverse simpl es
         maybeMinusToPrim f es
+      TPi a b        -> TPi <$> simpl a <*> underLam (simpl b)
       TLam b         -> TLam <$> underLam (simpl b)
       TLit{}         -> pure t
       TCon{}         -> pure t

@@ -239,10 +239,8 @@ data DataLens   a = DataLens {
   ,pack   :: (Constructor, [Any]) -> a
   }
  
-data RecordLens a
-type ElTel = [[Any] -> El Any]
-
 newtype U = U (El U)
+type ElTel = [[Any] -> El Any]
 
 -- | This data type is a deep embedding of the universe.
 --   TODO: The fact that we need to use a DataLens or a RecordLens is ugly.
@@ -254,11 +252,11 @@ newtype U = U (El U)
 --   values of type 'El a', so a shallow embedding must still support those.
 data El a where
   ElU        :: El U
-  ElPi       :: El a -> (a -> El b) ->  El (a -> b)
-  ElData     :: DataLens a          -> [ElTel] -> El a
-  ElRecord   :: RecordLens a        -> ElTel   -> El a
-  ElGlue     :: El a   {- A : Set a -}
-             -> Face     {- φ : Face -}
+  ElPi       :: El a -> (a -> El b)  -> El (a -> b)
+  ElPath     :: (Interval -> El Any) -> Any -> Any -> El PathP
+  ElData     :: DataLens a           -> [ElTel] -> El a
+  ElGlue     :: El a {- A : Set a -}
+             -> Face {- φ : Face -}
              -> Partial  (El b)  {- T : Partial (Set b) φ -}
              -> PartialP (b -> a)  {- f : PartialP φ (λ o → T o → A) -}
              -> PartialP (Equiv b a)  {- pf : PartialP φ (λ o → isEquiv (T o) A (f o)) -}
@@ -285,8 +283,11 @@ elComp _el@(ElData DataLens{pack,unpack} tels) _el0 _el1 _i _φ _ai a0 =
   in
   case tel of
     [] -> coe (pack (k,[]) :: a) :: c
-    _  -> error "not implemented: elComp for constructors with arguments"
-elComp _ _ _ _ _ _ _  = error "not implemented: elComp"
+    _  -> error "not implemented: elComp Data for constructors with arguments"
+elComp ElPi{} _ _ _ _ _ _   = error "not implemented: elComp Pi"
+elComp ElU{} _ _ _ _ _ _    = error "not implemented: elComp U"
+elComp ElGlue{} _ _ _ _ _ _ = error "not implemented: elComp Glue"
+elComp ElPath{} _ _ _ _ _ _ = error "not implemented: elComp Path"
 
 primComp :: forall a b c.
             (Interval -> El a) {- A -} ->
