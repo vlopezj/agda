@@ -157,7 +157,7 @@ pTerm t = case t of
                 , nest 2 pa
                 , text ")"
                 , nest 4 pb
-                ] 
+                ]
   TErased -> pure $ text "_"
   TError err -> paren 9 $ pure $ text "error" <+> text (show (show err))
 

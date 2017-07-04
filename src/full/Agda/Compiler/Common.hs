@@ -108,7 +108,10 @@ curMName :: TCM ModuleName
 curMName = sigMName <$> curSig
 
 curDefs :: TCM Definitions
-curDefs = fmap (HMap.filter (not . defNoCompilation)) $ (^. sigDefinitions) <$> curSig
+curDefs = do
+  cubical <- optCubical <$> pragmaOptions
+  (if cubical then id else
+    fmap (HMap.filter (not . defNoCompilation))) $ (^. sigDefinitions) <$> curSig
 
 sortDefs :: Definitions -> [(QName, Definition)]
 sortDefs defs =

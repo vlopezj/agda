@@ -112,7 +112,7 @@ simpleTestsList testDir comp extraArgs = do
 simpleTests :: Compiler -> IO TestTree
 simpleTests comp = do
   let testDir = "test" </> "Compiler" </> "simple"
-  tests' <- simpleTestsList testDir comp [] 
+  tests' <- simpleTestsList testDir comp []
   return $ testGroup "simple" $ tests'
 
 -- The Compiler tests using the standard library are horribly
@@ -173,7 +173,7 @@ cubicalTests MAlonzo = do
           ["--cubical"]) inp opts
 
   let testDirSimple = "test" </> "Compiler" </> "cubical-simple"
-  tests'Simple <- simpleTestsList testDirSimple MAlonzo ["--cubical"] 
+  tests'Simple <- simpleTestsList testDirSimple MAlonzo ["--cubical"]
 
   return $ Just $ testGroup "cubical" $ catMaybes tests' ++ tests'Simple
 

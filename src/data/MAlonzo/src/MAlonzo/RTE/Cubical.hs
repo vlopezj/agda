@@ -25,6 +25,7 @@ module MAlonzo.RTE.Cubical (
   primFaceForall,
   primComp,
   primIsOneEmpty,
+  El(..)
   ) where
 
 import MAlonzo.RTE
@@ -261,6 +262,8 @@ data El a where
              -> PartialP (b -> a)  {- f : PartialP φ (λ o → T o → A) -}
              -> PartialP (Equiv b a)  {- pf : PartialP φ (λ o → isEquiv (T o) A (f o)) -}
              -> El (Glue a b)
+  ElI        :: El I
+  ElPartialP :: Face -> (IsOne -> El a) -> El (PartialP a)
 
 elRename :: El a -> IAtom -> a -> a
 elRename = error "elRename"

@@ -74,9 +74,9 @@ syntax bind e (\ x -> f) = x <- e , f
 syntax then e f          = e ,, f
 
 stringToBool : String -> Maybe Bool
-stringToBool "true" = just true 
-stringToBool "false" = just false 
-stringToBool _ = nothing 
+stringToBool "true" = just true
+stringToBool "false" = just false
+stringToBool _ = nothing
 
 readBool : IO (Maybe Bool)
 readBool = stringToBool <$> getLine

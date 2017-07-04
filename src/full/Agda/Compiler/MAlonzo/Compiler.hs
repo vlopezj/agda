@@ -477,7 +477,9 @@ closedTerm v = hsCast <$> term v `runReaderT` initCCEnv
 --   Erased arguments are extracted as @()@.
 --   Types are extracted as @()@.
 term :: T.TTerm -> CC HS.Exp
-term tm0 = case tm0 of
+term tm0 =
+  pragmaOptions <&> optCubical >>= \cubical ->
+  case tm0 of
   T.TVar i -> do
     x <- lookupIndex i <$> asks ccCxt
     return $ hsVarUQ x
@@ -534,13 +536,13 @@ term tm0 = case tm0 of
   T.TCon q   -> term (T.TApp (T.TCon q) [])
   T.TPrim p  -> return $ compilePrim p
   T.TUnit    -> return HS.unit_con
-  T.TSort    -> return HS.unit_con
   T.TErased  -> return $ hsVarUQ $ HS.Ident mazErasedName
   T.TError e -> return $ case e of
     T.TUnreachable ->  rtmUnreachableError
-  T.TPi a b  -> pragmaOptions <&> optCubical >>= \case
-      True  -> HS.App <$> (HS.App mazElPi <$> term a) <*> termAbs b
-      False -> return HS.unit_con
+  T.TSort    | cubical   -> return mazElU
+             | otherwise -> return HS.unit_con
+  T.TPi a b  | cubical   -> HS.App <$> (HS.App mazElPi <$> term a) <*> termAbs b
+             | otherwise -> return HS.unit_con
   where apps =  foldM (\ h a -> HS.App h <$> term a)
         etaExpand n t =
           foldr (const T.TLam)

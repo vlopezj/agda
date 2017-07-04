@@ -206,7 +206,10 @@ mazRTECubical :: HS.ModuleName
 mazRTECubical = HS.ModuleName "MAlonzo.RTE.Cubical"
 
 mazElPi :: HS.Exp
-mazElPi = HS.Var $ HS.Qual mazRTECubical $ HS.Ident "ElPi" 
+mazElPi = HS.Var $ HS.Qual mazRTECubical $ HS.Ident "ElPi"
+
+mazElU :: HS.Exp
+mazElU = HS.Var $ HS.Qual mazRTECubical $ HS.Ident "ElU"
 
 mazElData :: HS.Exp
 mazElData = rtmError "elData not defined"
