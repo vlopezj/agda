@@ -1,6 +1,15 @@
 EXECUTED_PROGRAM
 
 ret > ExitSuccess
+out > EraseRefl.yes = λ a → case a of EraseRefl.Dec.yes b → b
+out > EraseRefl.Dec =
+out >   λ a b c d e →
+out >     EraseRefl.Dec.yes
+out >       (Agda.Primitive.CubicalPrimitives.primComp
+out >          (λ f → a f) (λ f → b f) c (λ f g → EraseRefl.yes (d f g))
+out >          (EraseRefl.yes e))
+out > EraseRefl.no = _
+out > EraseRefl.Dec = λ a b c d e → EraseRefl.Dec.no _
 out > EraseRefl.decEq₂ =
 out >   λ a b c d e f g h i j k l m n o →
 out >     case n of

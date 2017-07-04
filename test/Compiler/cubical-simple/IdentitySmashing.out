@@ -1,6 +1,20 @@
 EXECUTED_PROGRAM
 
 ret > ExitSuccess
+out > IdentitySmashing.List = λ a b c d e → IdentitySmashing.List.[]
+out > IdentitySmashing._∷_ =
+out >   λ a → case a of IdentitySmashing.List._∷_ b c → b
+out > IdentitySmashing._∷_ =
+out >   λ a → case a of IdentitySmashing.List._∷_ b c → c
+out > IdentitySmashing.List =
+out >   λ a b c d e →
+out >     IdentitySmashing.List._∷_
+out >       (Agda.Primitive.CubicalPrimitives.primComp
+out >          (λ f → a f) (λ f → b f) c (λ f g → IdentitySmashing._∷_ (d f g))
+out >          (IdentitySmashing._∷_ e))
+out >       (Agda.Primitive.CubicalPrimitives.primComp
+out >          (λ f → a f) (λ f → IdentitySmashing.List (a f) (b f)) c
+out >          (λ f g → IdentitySmashing._∷_ (d f g)) (IdentitySmashing._∷_ e))
 out > IdentitySmashing.vecToList =
 out >   λ a b c d →
 out >     case d of

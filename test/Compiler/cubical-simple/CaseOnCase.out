@@ -1,6 +1,8 @@
 EXECUTED_PROGRAM
 
 ret > ExitSuccess
+out > CaseOnCase.Cmp = λ a b c → CaseOnCase.Cmp.less
+out > CaseOnCase.Cmp = λ a b c → CaseOnCase.Cmp.equal
 out > CaseOnCase.isLess =
 out >   λ a →
 out >     case a of
@@ -14,6 +16,7 @@ out >     case c of
 out >       0 → CaseOnCase.Cmp.equal
 out >       _ | c >= 1 → CaseOnCase.Cmp.greater
 out >       _ → CaseOnCase.Cmp.less
+out > CaseOnCase.Cmp = λ a b c → CaseOnCase.Cmp.greater
 out > CaseOnCase._<_ =
 out >   λ a b →
 out >     let c = CaseOnCase._-_ a b in

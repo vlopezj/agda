@@ -1,6 +1,22 @@
 EXECUTED_PROGRAM
 
 ret > ExitSuccess
+out > CompareNat.diff = λ a → case a of CompareNat._<_.diff b c → b
+out > CompareNat.diff = _
+out > CompareNat._<_ =
+out >   λ a b c d e →
+out >     CompareNat._<_.diff
+out >       (Agda.Primitive.CubicalPrimitives.primComp
+out >          (λ f → ()) (λ f → Agda.Builtin.Nat.Nat) c
+out >          (λ f g → CompareNat.diff (d f g)) (CompareNat.diff e))
+out >       _
+out > CompareNat.less = λ a → case a of CompareNat.Comparison.less b → b
+out > CompareNat.Comparison =
+out >   λ a b c d e f g h →
+out >     CompareNat.Comparison.less
+out >       (Agda.Primitive.CubicalPrimitives.primComp
+out >          (λ i → a i) (λ i → c i (d i) (e i)) f
+out >          (λ i j → CompareNat.less (g i j)) (CompareNat.less h))
 out > CompareNat.compare =
 out >   λ a b →
 out >     let c = a < b in
@@ -13,6 +29,17 @@ out >           Agda.Builtin.Bool.Bool.true →
 out >             CompareNat.Comparison.greater (CompareNat._<_.diff (a - b - 1) _)
 out >       Agda.Builtin.Bool.Bool.true →
 out >         CompareNat.Comparison.less (CompareNat._<_.diff (b - a - 1) _)
+out > CompareNat.equal = _
+out > CompareNat.Comparison =
+out >   λ a b c d e f g h → CompareNat.Comparison.equal _
+out > CompareNat.greater =
+out >   λ a → case a of CompareNat.Comparison.greater b → b
+out > CompareNat.Comparison =
+out >   λ a b c d e f g h →
+out >     CompareNat.Comparison.greater
+out >       (Agda.Primitive.CubicalPrimitives.primComp
+out >          (λ i → a i) (λ i → c i (e i) (d i)) f
+out >          (λ i j → CompareNat.greater (g i j)) (CompareNat.greater h))
 out > CompareNat.compare-lots =
 out >   λ a b →
 out >     let c = a < b in

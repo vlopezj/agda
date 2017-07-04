@@ -53,6 +53,24 @@ out >     (Common.IO.then
 out >        () () Agda.Builtin.Unit.Unit Agda.Builtin.Unit.Unit
 out >        (CompileNumbers.printInt (CompileNumbers.match-on-lit₂ "neg" 42))
 out >        (Common.IO.putStrLn (CompileNumbers.nested-match -6)))
+out > CompileNumbers.less =
+out >   λ a → case a of CompileNumbers.Diff.less b → b
+out > CompileNumbers.Diff =
+out >   λ a b c →
+out >     CompileNumbers.Diff.less
+out >       (Agda.Primitive.CubicalPrimitives.primComp
+out >          (λ d → ()) (λ d → Agda.Builtin.Nat.Nat) a
+out >          (λ d e → CompileNumbers.less (b d e)) (CompileNumbers.less c))
+out > CompileNumbers.Diff = λ a b c → CompileNumbers.Diff.equal
+out > CompileNumbers.greater =
+out >   λ a → case a of CompileNumbers.Diff.greater b → b
+out > CompileNumbers.Diff =
+out >   λ a b c →
+out >     CompileNumbers.Diff.greater
+out >       (Agda.Primitive.CubicalPrimitives.primComp
+out >          (λ d → ()) (λ d → Agda.Builtin.Nat.Nat) a
+out >          (λ d e → CompileNumbers.greater (b d e))
+out >          (CompileNumbers.greater c))
 out > -42
 out > -42
 out > minus lots
