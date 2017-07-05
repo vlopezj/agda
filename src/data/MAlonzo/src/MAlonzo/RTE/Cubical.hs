@@ -164,13 +164,15 @@ unPartialP (PartialP x) o = x o
 
 newtype Union a b = Union Any
 
-pattern Unl :: a -> Union a b
+{- pattern Unr :: b -> Union a b -}
 pattern Unl a <- Union (coeAny -> a) 
-  where Unl a = Union (mkAny a)
+mkUnl :: a -> Union a b
+mkUnl a = Union (mkAny a)
 
-pattern Unr :: b -> Union a b
+{- pattern Unr :: b -> Union a b -}
 pattern Unr a <- Union (coeAny -> a) 
-  where Unr a = Union (mkAny a)
+mkUnr :: b -> Union a b
+mkUnr a = Union (mkAny a)
 
 apUnl :: f a -> f (Union a b)
 apUnl = coe
@@ -222,8 +224,8 @@ prim_glue :: Level -> Level {- a b -}
           -> PartialP b  {- PartialP φ T -} 
           -> a {- A -}
           -> Glue' a b
-prim_glue _ _ _eA (isOne -> Just o) _pT _f _pf t _a  = Unr$ unPartialP t o
-prim_glue _ _  eA φ                  pT  f  pf t  a  = Unl$ Eglue eA φ pT f pf t a
+prim_glue _ _ _eA (isOne -> Just o) _pT _f _pf t _a  = mkUnr$ unPartialP t o
+prim_glue _ _  eA φ                  pT  f  pf t  a  = mkUnl$ Eglue eA φ pT f pf t a
 
 prim_unglue :: Level -> Level {- a b -}
             -> El a  {- A : Set a -}
