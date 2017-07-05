@@ -80,6 +80,8 @@ primDepIMin a f = IDMin a f
 primINeg :: Interval -> Interval
 primINeg = INeg 
 
+newtype ISubst = ISubst { renameInterval :: Interval -> Interval }
+
 newtype IsOne = IsOne () deriving (Monoid)
 
 isOne :: {- φ : -} Face -> Maybe (IsOne {- φ -})
@@ -268,9 +270,6 @@ data El a where
   ElI        :: El Interval
   ElPartialP :: Face -> (IsOne :-> El a) -> El (PartialP a)
 
-elRename :: El a -> IAtom -> a -> a
-elRename = error "elRename"
-
 elComp   :: forall a b c.
             El a {- A[i] : Set -}
          -> El b {- A[i0] : Set -}
@@ -296,6 +295,22 @@ elComp ElGlue{} _ _ _ _ _ _ = error "not implemented: elComp Glue"
 elComp ElPath{} _ _ _ _ _ _ = error "not implemented: elComp Path"
 elComp ElI{} _ _ _ _ _ _    = error "elComp used on type I, which is not fibrant"
 elComp ElPartialP{} _ _ _ _ _ _ = error "elComp used on Partial type, which is not fibrant"
+
+elRename :: El a
+         -- ^ Code for the type of A
+         -> ISubst 
+         -- ^ ρ : a renaming in the interval 
+         -> a
+         -- ^ An element of A
+         -> b
+         -- ^ An element of Aρ 
+elRename ElData{} _ _   = error "not implemented: elRename Data"
+elRename ElPi{} _ _   = error "not implemented: elRename Pi"
+elRename ElU{} _ _    = error "not implemented: elRename U"
+elRename ElGlue{} _ _ = error "not implemented: elRename Glue"
+elRename ElPath{} _ _ = error "not implemented: elRename Path"
+elRename ElI{} _ _    = error "not implemented: elRename I"
+elRename ElPartialP{} _ _ = error "not implemented: elRename PartialP"
 
 primComp :: forall a b c.
             (Interval -> El a) {- A -} ->
