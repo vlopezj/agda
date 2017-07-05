@@ -7,6 +7,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
 module MAlonzo.RTE.Cubical (
   Interval,
   primIMax,
@@ -203,7 +204,7 @@ primGlue :: Level -> Level
          -> El a  {- A : Set a -}
          -> Face  {- φ : I -} 
          -> Partial  (El b) {- T : Partial (Set b) φ -}
-         -> PartialP (b -> a) {- f : PartialP φ (λ o → T o → A) -}
+         -> PartialP (b :-> a) {- f : PartialP φ (λ o → T o → A) -}
          -> PartialP (Equiv b a)  {- pf : PartialP φ (λ o → isEquiv (T o) A (f o)) -}
          -> El (Glue' a b)
 primGlue _la _lb _eA (isOne -> Just o) eB _f _pf = apUnr$ unPartial eB o
@@ -243,6 +244,8 @@ data DataLens   a = DataLens {
 newtype U = U (El U)
 type ElTel = [[Any] -> El Any]
 
+newtype a :-> b = Pi { getPi :: a -> b } {- Pi { getPi :: ISubst -> a -> b } -}
+
 -- | This data type is a deep embedding of the universe.
 --   TODO: The fact that we need to use a DataLens or a RecordLens is ugly.
 --
@@ -253,17 +256,17 @@ type ElTel = [[Any] -> El Any]
 --   values of type 'El a', so a shallow embedding must still support those.
 data El a where
   ElU        :: El U
-  ElPi       :: El a -> (a -> El b)  -> El (a -> b)
+  ElPi       :: El a -> (a :-> El b)  -> El (a :-> b)
   ElPath     :: (Interval -> El Any) -> Any -> Any -> El PathP
   ElData     :: DataLens a           -> [ElTel] -> El a
   ElGlue     :: El a {- A : Set a -}
              -> Face {- φ : Face -}
              -> Partial  (El b)  {- T : Partial (Set b) φ -}
-             -> PartialP (b -> a)  {- f : PartialP φ (λ o → T o → A) -}
+             -> PartialP (b :-> a)  {- f : PartialP φ (λ o → T o → A) -}
              -> PartialP (Equiv b a)  {- pf : PartialP φ (λ o → isEquiv (T o) A (f o)) -}
              -> El (Glue a b)
-  ElI        :: El I
-  ElPartialP :: Face -> (IsOne -> El a) -> El (PartialP a)
+  ElI        :: El Interval
+  ElPartialP :: Face -> (IsOne :-> El a) -> El (PartialP a)
 
 elRename :: El a -> IAtom -> a -> a
 elRename = error "elRename"
@@ -291,6 +294,8 @@ elComp ElPi{} _ _ _ _ _ _   = error "not implemented: elComp Pi"
 elComp ElU{} _ _ _ _ _ _    = error "not implemented: elComp U"
 elComp ElGlue{} _ _ _ _ _ _ = error "not implemented: elComp Glue"
 elComp ElPath{} _ _ _ _ _ _ = error "not implemented: elComp Path"
+elComp ElI{} _ _ _ _ _ _    = error "elComp used on type I, which is not fibrant"
+elComp ElPartialP{} _ _ _ _ _ _ = error "elComp used on Partial type, which is not fibrant"
 
 primComp :: forall a b c.
             (Interval -> El a) {- A -} ->
