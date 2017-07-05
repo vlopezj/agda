@@ -32,7 +32,7 @@ module MAlonzo.RTE.Cubical (
 import MAlonzo.RTE
 import System.IO.Unsafe (unsafePerformIO)
 import Data.IORef (newIORef, atomicModifyIORef',IORef)
-import Data.Monoid
+import Data.Monoid ((<>))
 import Control.Applicative ((<$>), (<*>), (<|>))
 
 type Level = ()
