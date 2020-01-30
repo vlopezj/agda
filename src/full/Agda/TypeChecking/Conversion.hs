@@ -707,13 +707,14 @@ compareDom cmp
         -- Victor, 2020-01-24
         -- We only need to block the bound variable if b2 is dependent.
         -- If it's non-dependent then the type of the variable doesn't matter.
-      b2Body <- if dependent
-                then do
-                   t <- blockTermOnProblem (unDom dom2) (var 0) pid
-                   return$ applySubst (t :# Wk 1 IdS) (absBody b2)
-                else return (absBody b2)
       let name = suggests [ Suggestion b1 , Suggestion b2 ]
-      addContext (name, dom1) $ cont (absBody b1) b2Body
+      addContext (name, dom1) $ do
+        b2Body <- if dependent
+                  then do
+                     t <- blockTermOnProblem (unDom dom2) (var 0) pid
+                     return$ applySubst (t :# Wk 1 IdS) (absBody b2)
+                  else return (absBody b2)
+        cont (absBody b1) b2Body
       stealConstraints pid
         -- Andreas, 2013-05-15 Now, comparison of codomains is not
         -- blocked any more by getting stuck on domains.
