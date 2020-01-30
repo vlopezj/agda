@@ -1,5 +1,3 @@
-Issue3672b.agda:33,51-58
-xs != xs of type D _124
-(because one has de Bruijn index 4 and the other 3)
-when checking that the solution x of metavariable _115 has the
-expected type F (_x_113 (genTel = f) (_ = x₁) (x = x)) xs
+Unsolved metas at the following locations:
+  Issue3672b.agda:33,14-16
+  Issue3672b.agda:33,57-58

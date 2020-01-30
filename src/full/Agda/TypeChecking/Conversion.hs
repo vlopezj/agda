@@ -683,8 +683,8 @@ compareDom :: (MonadConversion m , Free c, Subst Term b, Subst Term c)
   => Comparison -- ^ @cmp@ The comparison direction
   -> Dom Type   -- ^ @a1@  The smaller domain.
   -> Dom Type   -- ^ @a2@  The other domain.
-  -> Abs b      -- ^ @b1@  The smaller codomain.
-  -> Abs c      -- ^ @b2@  The bigger codomain.
+  -> Abs b      -- ^ @b1@  The codomain of @a1@.
+  -> Abs c      -- ^ @b2@  The codomain of @a2@.
   -> m ()     -- ^ Continuation if mismatch in 'Hiding'.
   -> m ()     -- ^ Continuation if mismatch in 'Relevance'.
   -> m ()     -- ^ Continuation if mismatch in 'Quantity'.
@@ -711,7 +711,7 @@ compareDom cmp
       addContext (name, dom1) $ do
         b2Body <- if dependent
                   then do
-                     t <- blockTermOnProblem (unDom dom2) (var 0) pid
+                     t <- blockTermOnProblem (raise 1$ unDom dom2) (var 0) pid
                      return$ applySubst (t :# Wk 1 IdS) (absBody b2)
                   else return (absBody b2)
         cont (absBody b1) b2Body
