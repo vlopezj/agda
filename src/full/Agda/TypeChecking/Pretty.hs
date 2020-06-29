@@ -372,10 +372,23 @@ instance PrettyTCM Constraint where
           => m Doc -> a -> b -> m Doc
         prettyCmp cmp x y = prettyTCMCtx TopCtx x <?> (cmp <+> prettyTCMCtx TopCtx y)
 
+instance PrettyTCM TwinT where
+  prettyTCM (SingleT a) = prettyTCM a
+  prettyTCM (TwinT{twinPid,necessary,twinLHS=a,twinRHS=b,twinCompat=c}) =
+    prettyTCM a <+> return "‡"
+                <+> return "["
+                <+> pretty twinPid
+                <+> return (if necessary then "" else "*")
+                <+> return ","
+                <+> prettyTCM c
+                <+> return "]"
+                <+> prettyTCM b
+
 instance PrettyTCM CompareAs where
-  prettyTCM (AsTermsOf a) = ":" <+> prettyTCMCtx TopCtx a
-  prettyTCM AsSizes       = ":" <+> do prettyTCM =<< sizeType
-  prettyTCM AsTypes       = empty
+  prettyTCM (AsTermsOfType a) = ":" <+> prettyTCMCtx TopCtx a
+  prettyTCM (AsTermsOfTwin a) = ":" <+> prettyTCMCtx TopCtx a
+  prettyTCM AsSizes           = ":" <+> do prettyTCM =<< sizeType
+  prettyTCM AsTypes           = empty
 
 instance PrettyTCM TypeCheckingProblem where
   prettyTCM (CheckExpr cmp e a) =

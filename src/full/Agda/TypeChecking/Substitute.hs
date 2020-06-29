@@ -973,6 +973,8 @@ instance Subst Term Constraint where
     where
       rf x = applySubst rho x
 
+instance Subst Term TwinT where
+
 instance Subst Term CompareAs where
   applySubst rho (AsTermsOf a) = AsTermsOf $ applySubst rho a
   applySubst rho AsSizes       = AsSizes
@@ -1297,7 +1299,7 @@ deriving instance (Subst t a, Ord a) => Ord (Tele a)
 -- Therefore, I hope this comment is sufficient to prevent a resurrection
 -- of the Eq instance for Constraint.
 
-deriving instance Eq CompareAs
+--deriving instance Eq CompareAs
 deriving instance Eq Section
 
 instance Ord PlusLevel where

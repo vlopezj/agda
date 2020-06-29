@@ -4,6 +4,7 @@
 
 module Agda.TypeChecking.Reduce where
 
+import Control.Applicative ((<|>))
 import Control.Monad.Reader
 
 import Data.Maybe
@@ -208,6 +209,9 @@ instance Instantiate Constraint where
   instantiate' (UnquoteTactic m t h g) = UnquoteTactic m <$> instantiate' t <*> instantiate' h <*> instantiate' g
   instantiate' c@CheckMetaInst{}    = return c
 
+instance Instantiate TwinT where
+  instantiate' = traverse instantiate'
+
 instance Instantiate CompareAs where
   instantiate' (AsTermsOf a) = AsTermsOf <$> instantiate' a
   instantiate' AsSizes       = return AsSizes
@@ -262,6 +266,9 @@ instance IsMeta a => IsMeta (LevelAtom' a) where
     BlockedLevel _ t -> isMeta t
     NeutralLevel _ t -> isMeta t
     UnreducedLevel t -> isMeta t
+
+instance IsMeta TwinT where
+  isMeta (UnsafeSingleT a) = isMeta a
 
 instance IsMeta CompareAs where
   isMeta (AsTermsOf a) = isMeta a
@@ -805,6 +812,9 @@ instance Reduce Constraint where
   reduce' (UnquoteTactic m t h g) = UnquoteTactic m <$> reduce' t <*> reduce' h <*> reduce' g
   reduce' c@CheckMetaInst{}     = return c
 
+instance Reduce TwinT where
+  reduce' = traverse reduce'
+
 instance Reduce CompareAs where
   reduce' (AsTermsOf a) = AsTermsOf <$> reduce' a
   reduce' AsSizes       = return AsSizes
@@ -970,10 +980,14 @@ instance Simplify Constraint where
   simplify' (UnquoteTactic m t h g) = UnquoteTactic m <$> simplify' t <*> simplify' h <*> simplify' g
   simplify' c@CheckMetaInst{}     = return c
 
+instance Simplify TwinT where
+  simplify' = traverse simplify'
+
 instance Simplify CompareAs where
-  simplify' (AsTermsOf a) = AsTermsOf <$> simplify' a
-  simplify' AsSizes       = return AsSizes
-  simplify' AsTypes       = return AsTypes
+  simplify' (AsTermsOfType a) = AsTermsOfType <$> simplify' a
+  simplify' (AsTermsOfTwin a) = AsTermsOfTwin <$> simplify' a
+  simplify' AsSizes           = return AsSizes
+  simplify' AsTypes           = return AsTypes
 
 -- UNUSED
 -- instance Simplify ConPatternInfo where
@@ -1153,10 +1167,14 @@ instance Normalise Constraint where
   normalise' (UnquoteTactic m t h g) = UnquoteTactic m <$> normalise' t <*> normalise' h <*> normalise' g
   normalise' c@CheckMetaInst{}     = return c
 
+instance Normalise TwinT where
+  normalise' = traverse normalise'
+
 instance Normalise CompareAs where
-  normalise' (AsTermsOf a) = AsTermsOf <$> normalise' a
-  normalise' AsSizes       = return AsSizes
-  normalise' AsTypes       = return AsTypes
+  normalise' (AsTermsOfType a) = AsTermsOfType <$> normalise' a
+  normalise' (AsTermsOfTwin a) = AsTermsOfTwin <$> normalise' a
+  normalise' AsSizes           = return AsSizes
+  normalise' AsTypes           = return AsTypes
 
 instance Normalise ConPatternInfo where
   normalise' i = normalise' (conPType i) <&> \ t -> i { conPType = t }
@@ -1378,10 +1396,13 @@ instance InstantiateFull Constraint where
     UnquoteTactic m t g h -> UnquoteTactic m <$> instantiateFull' t <*> instantiateFull' g <*> instantiateFull' h
     c@CheckMetaInst{}   -> return c
 
+instance InstantiateFull TwinT where
+
 instance InstantiateFull CompareAs where
-  instantiateFull' (AsTermsOf a) = AsTermsOf <$> instantiateFull' a
-  instantiateFull' AsSizes       = return AsSizes
-  instantiateFull' AsTypes       = return AsTypes
+  instantiateFull' (AsTermsOfType a) = AsTermsOfType <$> instantiateFull' a
+  instantiateFull' (AsTermsOfTwin a) = AsTermsOfTwin <$> instantiateFull' a
+  instantiateFull' AsSizes           = return AsSizes
+  instantiateFull' AsTypes           = return AsTypes
 
 instance InstantiateFull Signature where
   instantiateFull' (Sig a b c) = uncurry3 Sig <$> instantiateFull' (a, b, c)

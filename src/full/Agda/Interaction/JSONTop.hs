@@ -24,7 +24,7 @@ import Agda.Syntax.Internal (telToList, Dom'(..), Dom)
 import Agda.Syntax.Position (Range, rangeIntervals, Interval'(..), Position'(..))
 import Agda.VersionCommit
 
-import Agda.TypeChecking.Monad (Comparison(..), inTopContext, ProblemId(..), TCM)
+import Agda.TypeChecking.Monad (Comparison(..), inTopContext, ProblemId(..), TCM, TwinT''(..),TwinT', pattern UnsafeSingleT)
 import Agda.TypeChecking.Monad.MetaVars (getInteractionRange)
 import Agda.TypeChecking.Pretty (PrettyTCM(..), prettyTCM)
 -- borrowed from EmacsTop, for temporarily serialising stuff
@@ -210,6 +210,13 @@ encodeOC f encodePrettyTCM = \case
   [ "name"           @= encodePretty name
   , "type"           #= encodePrettyTCM a
   ]
+
+-- TODO: Check that it's ok to return single value bare,
+-- and double value as list.
+encodeTwinT :: (b -> TCM Value)
+  -> TwinT' b
+  -> TCM Value
+encodeTwinT f (UnsafeSingleT a) = f a
 
 encodeNamedPretty :: PrettyTCM a => (Name, a) -> TCM Value
 encodeNamedPretty (name, a) = obj
