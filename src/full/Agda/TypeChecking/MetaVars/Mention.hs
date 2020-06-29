@@ -122,6 +122,10 @@ instance MentionsMeta Constraint where
     where
       mm v = mentionsMetas xs v
 
+instance MentionsMeta TwinT where
+  mentionsMetas xs (SingleT a) = mentionsMetas xs a
+  mentionsMetas xs (TwinT{twinLHS,twinRHS,twinCompat}) = mentionsMetas xs (twinLHS, twinRHS, twinCompat)
+
 instance MentionsMeta CompareAs where
   mentionsMetas xs = \case
     AsTermsOf a -> mentionsMetas xs a
