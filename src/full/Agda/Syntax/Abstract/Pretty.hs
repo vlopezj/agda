@@ -1,4 +1,4 @@
-
+{-# LANGUAGE TypeFamilies #-}
 module Agda.Syntax.Abstract.Pretty where
 
 import Agda.Syntax.Fixity

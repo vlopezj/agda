@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Compute eta short normal forms.
 module Agda.TypeChecking.EtaContract where

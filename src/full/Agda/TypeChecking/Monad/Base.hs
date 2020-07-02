@@ -2687,8 +2687,8 @@ ifTopLevelAndHighlightingLevelIs l =
 -- * Type checking environment
 ---------------------------------------------------------------------------
 
-data TCEnv =
-    TCEnv { envContext             :: Context
+data TCEnv' ctxty =
+    TCEnv { envContext             :: Context' ctxty
           , envLetBindings         :: LetBindings
           , envCurrentModule       :: ModuleName
           , envCurrentPath         :: Maybe AbsolutePath
@@ -2816,6 +2816,8 @@ data TCEnv =
                 --   The actual backend can be obtained from the name via 'stBackends'.
           }
     deriving Data
+
+type TCEnv = TCEnv' Type
 
 initEnv :: TCEnv
 initEnv = TCEnv { envContext             = []
@@ -3807,7 +3809,7 @@ runReduceF f = do
   s <- getTC
   return $ \x -> unReduceM (f x) (ReduceEnv e s)
 
-instance MonadTCEnv ReduceM where
+instance MonadTCEnv' ReduceM where
   askTC   = ReduceM redEnv
   localTC = onReduceEnv . mapRedEnv
 
@@ -3863,7 +3865,9 @@ instance (Monoid w, MonadReduce m) => MonadReduce (WriterT w m)
 
 -- | @MonadTCEnv@ made into its own dedicated service class.
 --   This allows us to use 'MonadReader' for 'ReaderT' extensions of @TCM@.
-class Monad m => MonadTCEnv m where
+class Monad m => MonadTCEnv' m where
+  type ContextType m :: *
+  type ContextType m = Type
   askTC   :: m TCEnv
   localTC :: (TCEnv -> TCEnv) -> m a -> m a
 
@@ -3875,15 +3879,18 @@ class Monad m => MonadTCEnv m where
     =>  (TCEnv -> TCEnv) -> m a -> m a
   localTC = liftThrough . localTC
 
-instance MonadTCEnv m => MonadTCEnv (ChangeT m)
-instance MonadTCEnv m => MonadTCEnv (ExceptT err m)
-instance MonadTCEnv m => MonadTCEnv (IdentityT m)
-instance MonadTCEnv m => MonadTCEnv (MaybeT m)
-instance MonadTCEnv m => MonadTCEnv (ReaderT r m)
-instance MonadTCEnv m => MonadTCEnv (StateT s m)
-instance (Monoid w, MonadTCEnv m) => MonadTCEnv (WriterT w m)
+type MonadTCEnv m = (MonadTCEnv' m, ContextType m ~ Type)
+type TCEnvOf m = TCEnv' (ContextType m)
 
-instance MonadTCEnv m => MonadTCEnv (ListT m) where
+instance MonadTCEnv m => MonadTCEnv' (ChangeT m)
+instance MonadTCEnv m => MonadTCEnv' (ExceptT err m)
+instance MonadTCEnv m => MonadTCEnv' (IdentityT m)
+instance MonadTCEnv m => MonadTCEnv' (MaybeT m)
+instance MonadTCEnv m => MonadTCEnv' (ReaderT r m)
+instance MonadTCEnv m => MonadTCEnv' (StateT s m)
+instance (Monoid w, MonadTCEnv m) => MonadTCEnv' (WriterT w m)
+
+instance MonadTCEnv m => MonadTCEnv' (ListT m) where
   localTC = mapListT . localTC
 
 asksTC :: MonadTCEnv m => (TCEnv -> a) -> m a
@@ -4083,7 +4090,7 @@ instance MonadIO m => MonadIO (TCMT m) where
         s <- readIORef s
         E.throwIO $ IOException s r err
 
-instance MonadIO m => MonadTCEnv (TCMT m) where
+instance MonadIO m => MonadTCEnv' (TCMT m) where
   askTC             = TCM $ \ _ e -> return e
   localTC f (TCM m) = TCM $ \ s e -> m s (f e)
 

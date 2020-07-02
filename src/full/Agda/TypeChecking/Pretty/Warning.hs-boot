@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 module Agda.TypeChecking.Pretty.Warning where
 
 import Agda.Utils.Pretty

@@ -1,4 +1,4 @@
-
+{-# LANGUAGE TypeFamilies #-}
 module Agda.TypeChecking.Monad.Trace where
 
 import Prelude hiding (null)

@@ -1,4 +1,4 @@
-
+{-# LANGUAGE TypeFamilies #-}
 module Agda.TypeChecking.Monad.MetaVars where
 
 import Control.Monad.Reader

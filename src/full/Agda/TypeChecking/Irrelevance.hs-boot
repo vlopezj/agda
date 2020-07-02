@@ -1,4 +1,4 @@
-
+{-# LANGUAGE TypeFamilies #-}
 module Agda.TypeChecking.Irrelevance where
 
 import Agda.Syntax.Internal (LensSort)

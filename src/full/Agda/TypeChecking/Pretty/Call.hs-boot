@@ -1,4 +1,4 @@
-
+{-# LANGUAGE TypeFamilies #-}
 module Agda.TypeChecking.Pretty.Call where
 
 import Agda.Syntax.Position

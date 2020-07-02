@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Compute eta long normal forms.
 module Agda.TypeChecking.EtaExpand where

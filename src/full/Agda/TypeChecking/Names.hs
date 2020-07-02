@@ -1,5 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances       #-}
+{-# LANGUAGE TypeFamilies #-}
 
 {-| EDSL to construct terms without touching De Bruijn indices.
 
@@ -52,7 +53,6 @@ newtype NamesT m a = NamesT { unName :: ReaderT Names m a }
            , MonadIO
            , HasOptions
            , MonadDebug
-           , MonadTCEnv
            , MonadTCState
            , MonadTCM
            , ReadTCState
@@ -60,6 +60,8 @@ newtype NamesT m a = NamesT { unName :: ReaderT Names m a }
            , MonadError e
            , MonadAddContext
            )
+
+deriving instance MonadTCEnv m => MonadTCEnv' (NamesT m)
 
 -- deriving instance MonadState s m => MonadState s (NamesT m)
 

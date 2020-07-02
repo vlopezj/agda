@@ -1,4 +1,5 @@
 {-# LANGUAGE NondecreasingIndentation #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Agda.TypeChecking.SizedTypes where
 
@@ -220,11 +221,12 @@ boundedSizeMetaHook v tel0 a = do
 --
 --   If it does not succeed it reports failure of conversion check.
 trySizeUniv
-  :: MonadConversion m
+  :: forall m. MonadConversion m
   => Comparison -> CompareAs -> Term -> Term
   -> QName -> Elims -> QName -> Elims -> m ()
 trySizeUniv cmp t m n x els1 y els2 = do
-  let failure = typeError $ UnequalTerms cmp m n t
+  let failure :: forall a. m a
+      failure = typeError $ UnequalTerms cmp m n t
       forceInfty u = compareSizes CmpEq (unArg u) =<< primSizeInf
   -- Get the SIZE built-ins.
   (size, sizelt) <- flip catchError (const failure) $ do

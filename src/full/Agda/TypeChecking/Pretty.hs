@@ -1,4 +1,5 @@
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Agda.TypeChecking.Pretty
     ( module Agda.TypeChecking.Pretty
@@ -447,6 +448,7 @@ instance PrettyTCM DBPatVar where
   prettyTCM = prettyTCM . var . dbPatVarIndex
 
 instance PrettyTCM a => PrettyTCM (Pattern' a) where
+  prettyTCM :: forall m. MonadPretty m => Pattern' a -> m Doc
   prettyTCM (IApplyP _ _ _ x)    = prettyTCM x
   prettyTCM (VarP _ x)    = prettyTCM x
   prettyTCM (DotP _ t)    = ".(" <> prettyTCM t <> ")"

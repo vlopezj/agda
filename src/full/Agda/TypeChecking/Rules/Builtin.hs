@@ -1,4 +1,5 @@
 {-# LANGUAGE NondecreasingIndentation #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Agda.TypeChecking.Rules.Builtin
   ( bindBuiltin
@@ -597,6 +598,7 @@ bindPostulatedName builtin x m = do
     Axiom {} -> bindBuiltinName builtin =<< m q def
     _        -> err
   where
+  err :: forall a. TCM a
   err = typeError $ GenericError $
           "The argument to BUILTIN " ++ builtin ++
           " must be a postulated name"
@@ -832,7 +834,8 @@ bindBuiltin b x = do
   unlessM ((0 ==) <$> getContextSize) $ do
     -- Andreas, 2017-11-01, issue #2824
     -- Only raise an error if the name for the builtin is defined in a parametrized module.
-    let failure = typeError $ BuiltinInParameterisedModule b
+    let failure :: forall a. TCM a
+        failure = typeError $ BuiltinInParameterisedModule b
     -- Get the non-empty list of AbstractName for x
     xs <- case x of
       VarName{}            -> failure

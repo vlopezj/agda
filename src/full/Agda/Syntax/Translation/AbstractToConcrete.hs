@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                    #-}
 {-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- {-# OPTIONS -fwarn-unused-binds #-}
 
@@ -232,7 +233,7 @@ instance MonadReader Env AbsToCon where
   ask = AbsToCon ask
   local f m = AbsToCon $ local f $ unAbsToCon m
 
-instance MonadTCEnv AbsToCon where
+instance MonadTCEnv' AbsToCon where
   askTC = AbsToCon askTC
   localTC f m = AbsToCon $ localTC f $ unAbsToCon m
 

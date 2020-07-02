@@ -1,4 +1,6 @@
 {-# LANGUAGE NondecreasingIndentation #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE TypeFamilies #-}
 
 {-| Coverage checking, case splitting, and splitting for refine tactics.
 
@@ -612,6 +614,7 @@ createMissingHCompClause f n x old_sc (SClause tel ps _sigma' cps (Just t)) = se
   io      <- fromMaybe __IMPOSSIBLE__ <$> getTerm' builtinIOne
   iz      <- fromMaybe __IMPOSSIBLE__ <$> getTerm' builtinIZero
   let
+    cannotCreate :: forall a m. (MonadTCError m) => _ -> _ -> m a
     cannotCreate doc t = do
       typeError . SplitError $ CannotCreateMissingClause f (tel,fromSplitPatterns ps) doc t
   let old_ps = patternsToElims $ fromSplitPatterns $ scPats old_sc

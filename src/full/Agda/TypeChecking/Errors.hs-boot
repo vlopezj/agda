@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 module Agda.TypeChecking.Errors where
 
 import Agda.Syntax.Abstract.Name

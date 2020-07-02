@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 module Agda.Compiler.MAlonzo.Pragmas where
 
 import Control.Monad

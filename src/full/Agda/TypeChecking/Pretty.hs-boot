@@ -1,4 +1,4 @@
-
+{-# LANGUAGE TypeFamilies #-}
 module Agda.TypeChecking.Pretty where
 
 import Control.Monad.Reader (ReaderT)

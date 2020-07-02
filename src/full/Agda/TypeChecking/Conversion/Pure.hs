@@ -1,4 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Agda.TypeChecking.Conversion.Pure where
 
@@ -61,7 +63,7 @@ deriving instance MonadFail       m => MonadFail       (PureConversionT m)
 deriving instance HasBuiltins     m => HasBuiltins     (PureConversionT m)
 deriving instance HasConstInfo    m => HasConstInfo    (PureConversionT m)
 deriving instance HasOptions      m => HasOptions      (PureConversionT m)
-deriving instance MonadTCEnv      m => MonadTCEnv      (PureConversionT m)
+deriving instance MonadTCEnv      m => MonadTCEnv'     (PureConversionT m)
 deriving instance ReadTCState     m => ReadTCState     (PureConversionT m)
 deriving instance MonadReduce     m => MonadReduce     (PureConversionT m)
 deriving instance MonadAddContext m => MonadAddContext (PureConversionT m)

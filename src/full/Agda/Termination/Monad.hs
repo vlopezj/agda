@@ -1,4 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | The monad for the termination checker.
 --
@@ -187,7 +189,7 @@ newtype TerM a = TerM { terM :: ReaderT TerEnv TCM a }
            , MonadDebug
            , HasConstInfo
            , MonadIO
-           , MonadTCEnv
+           , MonadTCEnv'
            , MonadTCState
            , MonadTCM
            , ReadTCState

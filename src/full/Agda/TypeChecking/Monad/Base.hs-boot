@@ -5,6 +5,7 @@ import Data.IORef (IORef)
 import Data.Map (Map)
 
 import Agda.Syntax.Common (Nat)
+import Agda.Syntax.Internal (Type)
 import Agda.Syntax.Concrete.Name (TopLevelModuleName)
 import Agda.Utils.FileName (AbsolutePath)
 
@@ -22,7 +23,8 @@ instance Show HighlightingLevel
 instance Read HighlightingLevel
 
 
-data TCEnv
+type TCEnv = TCEnv' Type
+data TCEnv' ctxty
 data TCState
 newtype TCMT m a = TCM { unTCM :: IORef TCState -> TCEnv -> m a }
 

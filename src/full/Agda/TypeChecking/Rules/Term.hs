@@ -1,4 +1,5 @@
 {-# LANGUAGE NondecreasingIndentation #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Agda.TypeChecking.Rules.Term where
 
@@ -771,7 +772,7 @@ checkExtendedLambda cmp i di qname cs e t = localTC (set eQuantity topQuantity) 
 --   Note that the returned meta might only exists in the state where the error was
 --   thrown, thus, be an invalid 'MetaId' in the current state.
 --
-catchIlltypedPatternBlockedOnMeta :: TCM a -> ((TCErr, MetaId) -> TCM a) -> TCM a
+catchIlltypedPatternBlockedOnMeta :: forall a. TCM a -> ((TCErr, MetaId) -> TCM a) -> TCM a
 catchIlltypedPatternBlockedOnMeta m handle = do
 
   -- Andreas, 2016-07-13, issue 2028.
@@ -780,7 +781,8 @@ catchIlltypedPatternBlockedOnMeta m handle = do
 
   m `catchError` \ err -> do
 
-    let reraise = throwError err
+    let reraise :: forall a. TCM a
+        reraise = throwError err
 
     -- Get the blocking meta responsible for the type error.
     -- If we do not find such a meta or the error should not be handled,

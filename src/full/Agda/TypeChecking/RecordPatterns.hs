@@ -1,4 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Code which replaces pattern matching on record constructors with
 -- uses of projection functions.
@@ -585,8 +587,11 @@ translateRecordPatterns clause = do
 
 newtype RecPatM a = RecPatM (TCMT (ReaderT Nat (StateT Nat IO)) a)
   deriving (Functor, Applicative, Monad,
-            MonadIO, MonadTCM, HasOptions,
-            MonadTCEnv, MonadTCState)
+            MonadIO, HasOptions,
+            MonadTCState)
+
+deriving instance MonadTCM    RecPatM
+deriving instance MonadTCEnv' RecPatM
 
 -- | Runs a computation in the 'RecPatM' monad.
 

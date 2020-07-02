@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 module Agda.Syntax.IdiomBrackets (parseIdiomBracketsSeq) where
 
 import Control.Monad
