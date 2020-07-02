@@ -40,3 +40,6 @@ type BackendName = String
 data Comparison
 newtype ProblemId = ProblemId Nat
 data Polarity
+
+data TwinT'' b a
+type TwinT' = TwinT'' Bool

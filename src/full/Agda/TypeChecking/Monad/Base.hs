@@ -1041,7 +1041,10 @@ pattern UnsafeSingleT :: a -> TwinT'' b a
 pattern UnsafeSingleT s <- (unsafeSingleT -> s)
   where
     UnsafeSingleT s = SingleT s
+
+#if __GLASGOW_HASKELL__ >= 802
 {-# COMPLETE UnsafeSingleT #-}
+#endif
 
 -- We do not derive Traverse because we want to be careful when handling the "necessary" bit
 openTwinT :: TwinT'' Bool a -> TwinT'' () a
@@ -1213,7 +1216,9 @@ pattern AsTermsOf s <- (viewCompareAs_AsTermsOf -> Just s)
   where
     AsTermsOf s = AsTermsOfType s
 
+#if __GLASGOW_HASKELL__ >= 802
 {-# COMPLETE AsTermsOf, AsSizes, AsTypes #-}
+#endif
 
 instance Free CompareAs where
   freeVars' (AsTermsOf a) = freeVars' a
