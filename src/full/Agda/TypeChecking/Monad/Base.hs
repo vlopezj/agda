@@ -8,6 +8,7 @@ module Agda.TypeChecking.Monad.Base where
 
 import Prelude hiding (null)
 import GHC.Stack ( freezeCallStack, callStack, HasCallStack )
+import qualified Data.Kind as Hs
 
 import Control.Applicative hiding (empty)
 import qualified Control.Concurrent as C
@@ -3866,7 +3867,7 @@ instance (Monoid w, MonadReduce m) => MonadReduce (WriterT w m)
 -- | @MonadTCEnv@ made into its own dedicated service class.
 --   This allows us to use 'MonadReader' for 'ReaderT' extensions of @TCM@.
 class Monad m => MonadTCEnv' m where
-  type ContextType m :: *
+  type ContextType m :: Hs.Type
   type ContextType m = Type
   askTC   :: m TCEnv
   localTC :: (TCEnv -> TCEnv) -> m a -> m a
