@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -588,10 +589,17 @@ translateRecordPatterns clause = do
 newtype RecPatM a = RecPatM (TCMT (ReaderT Nat (StateT Nat IO)) a)
   deriving (Functor, Applicative, Monad,
             MonadIO, HasOptions,
-            MonadTCState)
+            MonadTCState, MonadTCM)
 
-deriving instance MonadTCM    RecPatM
-deriving instance MonadTCEnv' RecPatM
+#if __GLASGOW_HASKELL__ < 802
+instance MonadTCEnv'     RecPatM where
+  type ContextType RecPatM = Type
+  askTC = RecPatM$ askTC
+  localTC f (RecPatM m) = RecPatM$ localTC f m
+#else
+deriving instance MonadTCEnv'     RecPatM
+#endif
+
 
 -- | Runs a computation in the 'RecPatM' monad.
 

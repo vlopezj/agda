@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RoleAnnotations            #-}
 {-# LANGUAGE TypeFamilies               #-} -- for type equality ~
 {-# LANGUAGE ViewPatterns               #-}
 
@@ -2691,6 +2692,9 @@ ifTopLevelAndHighlightingLevelIs l =
 -- * Type checking environment
 ---------------------------------------------------------------------------
 
+#if __GLASGOW_HASKELL__ < 804
+type role TCEnv' nominal
+#endif
 data TCEnv' ctxty =
     TCEnv { envContext             :: Context' ctxty
           , envLetBindings         :: LetBindings
@@ -4023,6 +4027,9 @@ stateTCLensM l f = do
 
 -- | The type checking monad transformer.
 -- Adds readonly 'TCEnv' and mutable 'TCState'.
+#if __GLASGOW_HASKELL__ < 804
+type role TCMT' nominal nominal nominal
+#endif
 newtype TCMT' ctxty m a = TCM { unTCM :: IORef TCState -> TCEnv' ctxty -> m a }
 type TCMT = TCMT' Type
 type TCMUT = TCMT' TwinT

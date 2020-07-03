@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RoleAnnotations #-}
 module Agda.TypeChecking.Monad.Base where
 
@@ -23,12 +24,13 @@ data HighlightingLevel
 instance Show HighlightingLevel
 instance Read HighlightingLevel
 
-
+#if __GLASGOW_HASKELL__ < 804
+type role TCEnv' nominal
+type role TCMT' nominal nominal nominal
+#endif
 type TCEnv = TCEnv' Type
-type role TCEnv' representational
 data TCEnv' ctxty
 data TCState
-type role TCMT' representational representational nominal
 newtype TCMT' ctxty m a = TCM { unTCM :: IORef TCState -> TCEnv' ctxty -> m a }
 
 type TCMT = TCMT' Type

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -54,14 +55,21 @@ newtype NamesT m a = NamesT { unName :: ReaderT Names m a }
            , HasOptions
            , MonadDebug
            , MonadTCState
-           , MonadTCM
            , ReadTCState
-           , MonadReduce
            , MonadError e
-           , MonadAddContext
            )
 
+#if __GLASGOW_HASKELL__ < 802
+instance MonadTCEnv m => MonadTCEnv' (NamesT m) where
+  type ContextType (NamesT m) = ContextType m
+  askTC = NamesT askTC
+  localTC f (NamesT m) = NamesT$ localTC f m
+#else
 deriving instance MonadTCEnv m => MonadTCEnv' (NamesT m)
+#endif
+deriving instance MonadReduce m => MonadReduce (NamesT m)
+deriving instance MonadAddContext m => MonadAddContext (NamesT m)
+deriving instance MonadTCM m => MonadTCM (NamesT m)
 
 -- deriving instance MonadState s m => MonadState s (NamesT m)
 

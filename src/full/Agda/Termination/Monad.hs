@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -189,13 +190,21 @@ newtype TerM a = TerM { terM :: ReaderT TerEnv TCM a }
            , MonadDebug
            , HasConstInfo
            , MonadIO
-           , MonadTCEnv'
            , MonadTCState
            , MonadTCM
            , ReadTCState
            , MonadReduce
            , MonadAddContext
            )
+
+#if __GLASGOW_HASKELL__ < 802
+instance MonadTCEnv'     TerM where
+  type ContextType TerM = ContextType TCM
+  askTC = TerM$ askTC
+  localTC f (TerM m) = TerM$ localTC f m
+#else
+deriving instance MonadTCEnv' TerM
+#endif
 
 instance MonadTer TerM where
   terAsk     = TerM $ ask
