@@ -971,14 +971,17 @@ iFullHash i = combineHashes $ iSourceHash i : List.map snd (iImportedModules i)
 -- ** Closure
 ---------------------------------------------------------------------------
 
-data Closure a = Closure
+data Closure' ctxty a = Closure
   { clSignature        :: Signature
-  , clEnv              :: TCEnv
+  , clEnv              :: TCEnv' ctxty
   , clScope            :: ScopeInfo
   , clModuleCheckpoints :: Map ModuleName CheckpointId
   , clValue            :: a
   }
     deriving (Data, Functor, Foldable)
+
+type Closure a = Closure' Type a
+type ClosureU a = Closure' TwinT a
 
 instance Show a => Show (Closure a) where
   show cl = "Closure { clValue = " ++ show (clValue cl) ++ " }"
@@ -2819,8 +2822,9 @@ data TCEnv' ctxty =
     deriving Data
 
 type TCEnv = TCEnv' Type
+type TCUEnv = TCEnv' TwinT
 
-initEnv :: TCEnv
+initEnv :: TCEnv' a
 initEnv = TCEnv { envContext             = []
                 , envLetBindings         = Map.empty
                 , envCurrentModule       = noModuleName
@@ -3051,6 +3055,10 @@ type ContextEntry' t = Dom (Name, t)
 
 type Context      = Context' Type
 type ContextEntry = ContextEntry' Type
+
+type ContextU      = Context' TwinT
+type ContextEntryU = ContextEntry' TwinT
+
 
 ---------------------------------------------------------------------------
 -- ** Let bindings
@@ -4015,10 +4023,14 @@ stateTCLensM l f = do
 
 -- | The type checking monad transformer.
 -- Adds readonly 'TCEnv' and mutable 'TCState'.
-newtype TCMT m a = TCM { unTCM :: IORef TCState -> TCEnv -> m a }
+newtype TCMT' ctxty m a = TCM { unTCM :: IORef TCState -> TCEnv' ctxty -> m a }
+type TCMT = TCMT' Type
+type TCMUT = TCMT' TwinT
 
 -- | Type checking monad.
-type TCM = TCMT IO
+type TCM' ctxty = TCMT' ctxty IO
+type TCM = TCM' Type
+type TCMU = TCM' TwinT
 
 {-# SPECIALIZE INLINE mapTCMT :: (forall a. IO a -> IO a) -> TCM a -> TCM a #-}
 mapTCMT :: (forall a. m a -> n a) -> TCMT m a -> TCMT n a

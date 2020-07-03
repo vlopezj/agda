@@ -1,3 +1,4 @@
+{-# LANGUAGE RoleAnnotations #-}
 module Agda.TypeChecking.Monad.Base where
 
 import Control.Monad.IO.Class (MonadIO)
@@ -24,9 +25,13 @@ instance Read HighlightingLevel
 
 
 type TCEnv = TCEnv' Type
+type role TCEnv' representational
 data TCEnv' ctxty
 data TCState
-newtype TCMT m a = TCM { unTCM :: IORef TCState -> TCEnv -> m a }
+type role TCMT' representational representational nominal
+newtype TCMT' ctxty m a = TCM { unTCM :: IORef TCState -> TCEnv' ctxty -> m a }
+
+type TCMT = TCMT' Type
 
 instance MonadIO m => Applicative (TCMT m)
 instance MonadIO m => Functor (TCMT m)

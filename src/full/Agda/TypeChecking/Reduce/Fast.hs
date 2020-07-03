@@ -61,7 +61,7 @@ import Agda.Syntax.Position
 import Agda.Syntax.Literal
 
 import Agda.TypeChecking.CompiledClause
-import Agda.TypeChecking.Monad hiding (Closure(..))
+import Agda.TypeChecking.Monad hiding (Closure, Closure'(..))
 import Agda.TypeChecking.Reduce as R
 import Agda.TypeChecking.Rewriting (rewrite)
 import Agda.TypeChecking.Substitute
