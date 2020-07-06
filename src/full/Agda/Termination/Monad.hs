@@ -194,7 +194,7 @@ newtype TerM a = TerM { terM :: ReaderT TerEnv TCM a }
            , MonadTCM
            , ReadTCState
            , MonadReduce
-           , MonadAddContext
+           , MonadAddContext'
            )
 
 #if __GLASGOW_HASKELL__ < 802

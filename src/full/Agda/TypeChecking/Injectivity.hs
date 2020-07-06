@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 {- |
 
 "Injectivity", or more precisely, "constructor headedness", is a
@@ -342,10 +344,16 @@ useInjectivity dir ty blk neu = locallyTC eInjectivityDepth succ $ do
     fallback     = addConstraint $ app (ValueCmp cmp ty) blk neu
     success blk' = app (compareAs cmp ty) blk' neu
 
-    (cmp, app) = case dir of
-      DirEq -> (CmpEq, id)
-      DirLeq -> (CmpLeq, id)
-      DirGeq -> (CmpLeq, flip)
+    cmp = case dir of
+      DirEq  -> CmpEq
+      DirLeq -> CmpLeq
+      DirGeq -> CmpLeq
+
+    app :: forall a b. (a -> a -> b) -> a -> a -> b
+    app = case dir of
+      DirEq  -> id
+      DirLeq -> id
+      DirGeq -> flip
 
 -- | The second argument should be a blocked application and the third argument
 --   the inverse of the applied function.

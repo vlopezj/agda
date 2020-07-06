@@ -3823,6 +3823,7 @@ runReduceF f = do
   return $ \x -> unReduceM (f x) (ReduceEnv e s)
 
 instance MonadTCEnv' ReduceM where
+  type ContextType ReduceM = Type
   askTC   = ReduceM redEnv
   localTC = onReduceEnv . mapRedEnv
 
@@ -3880,30 +3881,46 @@ instance (Monoid w, MonadReduce m) => MonadReduce (WriterT w m)
 --   This allows us to use 'MonadReader' for 'ReaderT' extensions of @TCM@.
 class Monad m => MonadTCEnv' m where
   type ContextType m :: Hs.Type
-  type ContextType m = Type
-  askTC   :: m TCEnv
-  localTC :: (TCEnv -> TCEnv) -> m a -> m a
+  askTC   :: m (TCEnvOf m)
+  localTC :: (TCEnvOf m -> TCEnvOf m) -> m a -> m a
 
-  default askTC :: (MonadTrans t, MonadTCEnv n, t n ~ m) => m TCEnv
+  default askTC :: (MonadTrans t, MonadTCEnv' n, t n ~ m,
+                    ContextType n ~ ContextType m) => m (TCEnvOf m)
   askTC = lift askTC
 
   default localTC
-    :: (MonadTransControl t, MonadTCEnv n, t n ~ m)
-    =>  (TCEnv -> TCEnv) -> m a -> m a
+    :: (MonadTransControl t, MonadTCEnv' n, t n ~ m,
+        ContextType n ~ ContextType m)
+    =>  (TCEnvOf m -> TCEnvOf m) -> m a -> m a
   localTC = liftThrough . localTC
 
 type MonadTCEnv m = (MonadTCEnv' m, ContextType m ~ Type)
 type TCEnvOf m = TCEnv' (ContextType m)
+type ContextOf m = Context' (ContextType m)
 
-instance MonadTCEnv m => MonadTCEnv' (ChangeT m)
-instance MonadTCEnv m => MonadTCEnv' (ExceptT err m)
-instance MonadTCEnv m => MonadTCEnv' (IdentityT m)
-instance MonadTCEnv m => MonadTCEnv' (MaybeT m)
-instance MonadTCEnv m => MonadTCEnv' (ReaderT r m)
-instance MonadTCEnv m => MonadTCEnv' (StateT s m)
-instance (Monoid w, MonadTCEnv m) => MonadTCEnv' (WriterT w m)
+class (MonadTCEnv' m, ContextType m ~ TwinT) => MonadTCUEnv m  where
+  type MonadTCEnvOf m :: Hs.Type -> Hs.Type
+  tcuLeft   :: (MonadTCEnvOf m) a -> m a
+  tcuRight  :: (MonadTCEnvOf m) a -> m a
+  tcuSingle :: m a -> (MonadTCEnvOf m) a
 
-instance MonadTCEnv m => MonadTCEnv' (ListT m) where
+instance MonadTCEnv' m => MonadTCEnv' (ChangeT m) where
+  type ContextType (ChangeT m) = ContextType m
+instance MonadTCEnv' m => MonadTCEnv' (ExceptT err m) where
+  type ContextType (ExceptT err m) = ContextType m
+instance MonadTCEnv' m => MonadTCEnv' (IdentityT m) where
+  type ContextType (IdentityT m) = ContextType m
+instance MonadTCEnv' m => MonadTCEnv' (MaybeT m) where
+  type ContextType (MaybeT m) = ContextType m
+instance MonadTCEnv' m => MonadTCEnv' (ReaderT r m) where
+  type ContextType (ReaderT r m) = ContextType m
+instance MonadTCEnv' m => MonadTCEnv' (StateT s m) where
+  type ContextType (StateT s m) = ContextType m
+instance (Monoid w, MonadTCEnv' m) => MonadTCEnv' (WriterT w m) where
+    type ContextType (WriterT w m) = ContextType m
+
+instance MonadTCEnv' m => MonadTCEnv' (ListT m) where
+  type ContextType (ListT m) = ContextType m
   localTC = mapListT . localTC
 
 asksTC :: MonadTCEnv m => (TCEnv -> a) -> m a
@@ -4111,6 +4128,7 @@ instance MonadIO m => MonadIO (TCMT m) where
         E.throwIO $ IOException s r err
 
 instance MonadIO m => MonadTCEnv' (TCMT m) where
+  type ContextType (TCMT m) = Type
   askTC             = TCM $ \ _ e -> return e
   localTC f (TCM m) = TCM $ \ s e -> m s (f e)
 

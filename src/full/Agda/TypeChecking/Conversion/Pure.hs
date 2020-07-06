@@ -65,16 +65,16 @@ deriving instance HasBuiltins     m => HasBuiltins     (PureConversionT m)
 deriving instance HasConstInfo    m => HasConstInfo    (PureConversionT m)
 deriving instance HasOptions      m => HasOptions      (PureConversionT m)
 #if __GLASGOW_HASKELL__ < 802
-instance MonadTCEnv      m => MonadTCEnv'     (PureConversionT m) where
+instance MonadTCEnv'      m => MonadTCEnv'     (PureConversionT m) where
   type ContextType (PureConversionT m) = ContextType m
   askTC = PureConversionT$ askTC
   localTC f (PureConversionT m) = PureConversionT$ localTC f m
 #else
-deriving instance MonadTCEnv      m => MonadTCEnv'     (PureConversionT m)
+deriving instance MonadTCEnv'     m => MonadTCEnv'     (PureConversionT m)
 #endif
 deriving instance ReadTCState     m => ReadTCState     (PureConversionT m)
 deriving instance MonadReduce     m => MonadReduce     (PureConversionT m)
-deriving instance MonadAddContext m => MonadAddContext (PureConversionT m)
+deriving instance MonadAddContext' m => MonadAddContext' (PureConversionT m)
 deriving instance MonadDebug      m => MonadDebug      (PureConversionT m)
 
 instance (Monad m, Semigroup a) => Semigroup (PureConversionT m a) where

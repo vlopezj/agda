@@ -54,7 +54,7 @@ withFreshR f = do
   let (i, s') = nextFresh s
   withTCState (const s') (f i)
 
-instance MonadAddContext ReduceM where
+instance MonadAddContext' ReduceM where
   withFreshName r s k = withFreshR $ \i -> k (mkName r i s)
 
   addCtx = defaultAddCtx

@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 module Agda.TypeChecking.Primitive.Base where
 
 -- Control.Monad.Fail import is redundant since GHC 8.8.1

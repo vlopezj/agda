@@ -143,17 +143,16 @@ getModuleParameterSub m = do
   mcp <- (^. stModuleCheckpoints . key m) <$> getTCState
   traverse checkpointSubstitution mcp
 
-
 -- * Adding to the context
 
 {-# SPECIALIZE addCtx :: Name -> Dom Type -> TCM a -> TCM a #-}
-class MonadTCEnv m => MonadAddContext m where
+class MonadTCEnv' m => MonadAddContext' m where
   -- | @addCtx x arg cont@ add a variable to the context.
   --
   --   Chooses an unused 'Name'.
   --
   --   Warning: Does not update module parameter substitution!
-  addCtx :: Name -> Dom Type -> m a -> m a
+  addCtx :: Name -> Dom (ContextType m) -> m a -> m a
 
   -- | Add a let bound variable to the context
   addLetBinding' :: Name -> Term -> Dom Type -> m a -> m a
@@ -161,32 +160,37 @@ class MonadTCEnv m => MonadAddContext m where
   -- | Update the context.
   --   Requires a substitution that transports things living in the old context
   --   to the new.
-  updateContext :: Substitution -> (Context -> Context) -> m a -> m a
+  updateContext :: Substitution -> (ContextOf m -> ContextOf m) -> m a -> m a
 
   withFreshName :: Range -> ArgName -> (Name -> m a) -> m a
 
   default addCtx
-    :: (MonadAddContext n, MonadTransControl t, t n ~ m)
-    => Name -> Dom Type -> m a -> m a
+    :: (MonadAddContext' n, MonadTransControl t, t n ~ m,
+        ContextType (t n) ~ ContextType n)
+    => Name -> Dom (ContextType m) -> m a -> m a
   addCtx x a = liftThrough $ addCtx x a
 
   default addLetBinding'
-    :: (MonadAddContext n, MonadTransControl t, t n ~ m)
+    :: (MonadAddContext' n, MonadTransControl t, t n ~ m)
     => Name -> Term -> Dom Type -> m a -> m a
   addLetBinding' x u a = liftThrough $ addLetBinding' x u a
 
   default updateContext
-    :: (MonadAddContext n, MonadTransControl t, t n ~ m)
-    => Substitution -> (Context -> Context) -> m a -> m a
+    :: (MonadAddContext' n, MonadTransControl t, t n ~ m,
+        ContextType (t n) ~ ContextType n)
+    => Substitution -> (ContextOf m -> ContextOf m) -> m a -> m a
   updateContext sub f = liftThrough $ updateContext sub f
 
   default withFreshName
-    :: (MonadAddContext n, MonadTransControl t, t n ~ m)
+    :: (MonadAddContext' n, MonadTransControl t, t n ~ m)
     => Range -> ArgName -> (Name -> m a) -> m a
   withFreshName r x cont = do
     st <- liftWith $ \ run -> do
       withFreshName r x $ run . cont
     restoreT $ return st
+
+type MonadAddContext m = (MonadAddContext' m, ContextType m ~ Type)
+type MonadAddContextU m = (MonadAddContext' m, ContextType m ~ TwinT)
 
 -- | Default implementation of addCtx in terms of updateContext
 defaultAddCtx :: MonadAddContext m => Name -> Dom Type -> m a -> m a
@@ -198,13 +202,13 @@ defaultAddCtx x a ret = do
 withFreshName_ :: (MonadAddContext m) => ArgName -> (Name -> m a) -> m a
 withFreshName_ = withFreshName noRange
 
-instance MonadAddContext m => MonadAddContext (MaybeT m)
-instance MonadAddContext m => MonadAddContext (ExceptT e m)
-instance MonadAddContext m => MonadAddContext (ReaderT r m)
-instance MonadAddContext m => MonadAddContext (StateT r m)
-instance (Monoid w, MonadAddContext m) => MonadAddContext (WriterT w m)
+instance MonadAddContext' m => MonadAddContext' (MaybeT m)
+instance MonadAddContext' m => MonadAddContext' (ExceptT e m)
+instance MonadAddContext' m => MonadAddContext' (ReaderT r m)
+instance MonadAddContext' m => MonadAddContext' (StateT r m)
+instance (Monoid w, MonadAddContext' m) => MonadAddContext' (WriterT w m)
 
-instance MonadAddContext m => MonadAddContext (ListT m) where
+instance MonadAddContext' m => MonadAddContext' (ListT m) where
   addCtx x a             = liftListT $ addCtx x a
   addLetBinding' x u a   = liftListT $ addLetBinding' x u a
   updateContext sub f    = liftListT $ updateContext sub f
@@ -243,7 +247,7 @@ withShadowingNameTCM x f = do
           modifyTCLens stShadowingNames $ Map.insertWith (++) x shadows
         Nothing      -> return ()
 
-instance MonadAddContext TCM where
+instance MonadAddContext' TCM where
   addCtx x a ret = applyUnless (isNoName x) (withShadowingNameTCM x) $
     defaultAddCtx x a ret
 

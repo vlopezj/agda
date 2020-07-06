@@ -234,6 +234,7 @@ instance MonadReader Env AbsToCon where
   local f m = AbsToCon $ local f $ unAbsToCon m
 
 instance MonadTCEnv' AbsToCon where
+  type ContextType AbsToCon = I.Type
   askTC = AbsToCon askTC
   localTC f m = AbsToCon $ localTC f $ unAbsToCon m
 
