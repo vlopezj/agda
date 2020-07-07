@@ -90,7 +90,7 @@ data Level
 -- | Highlight a warning.
 --   We do not generate highlighting for unsolved metas and
 --   constraints, as that gets handled in bulk after typechecking.
-highlightWarning :: TCWarning -> TCM ()
+highlightWarning :: TCWarning -> TCM' ctxty ()
 highlightWarning tcwarn = do
   let h = compress $ warningHighlighting' False tcwarn
   modifyTCLens stSyntaxInfo (h <>)

@@ -6,7 +6,7 @@ import Agda.Syntax.Common   (InteractionId)
 import Agda.Syntax.Concrete (Expr)
 
 import {-# SOURCE #-} Agda.TypeChecking.Monad.Base
-    (TCM, ModuleToSource, HighlightingMethod)
+    (TCM', ModuleToSource, HighlightingMethod, IsContextType)
 
 import Agda.Interaction.Highlighting.Precise
     (TokenBased, HighlightingInfo)
@@ -36,5 +36,6 @@ data RemoveTokenBasedHighlighting
 data GiveResult
 data Status
 
-type InteractionOutputCallback = Response -> TCM ()
+type InteractionOutputCallback = forall ctxty. IsContextType ctxty => Response -> TCM' ctxty ()
+newtype WrappedIOC = WrappedIOC { unwrapIOC :: InteractionOutputCallback }
 defaultInteractionOutputCallback :: InteractionOutputCallback

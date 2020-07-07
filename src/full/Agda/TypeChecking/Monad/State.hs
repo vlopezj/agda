@@ -20,7 +20,7 @@ import qualified Data.HashMap.Strict as HMap
 import Agda.Benchmarking
 
 import Agda.Interaction.Response
-  (InteractionOutputCallback, Response)
+  (InteractionOutputCallback, WrappedIOC(..), Response)
 
 import Agda.Syntax.Common
 import Agda.Syntax.Scope.Base
@@ -145,7 +145,7 @@ updatePersistentState
   :: (PersistentTCState -> PersistentTCState) -> (TCState -> TCState)
 updatePersistentState f s = s { stPersistentState = f (stPersistentState s) }
 
-modifyPersistentState :: (PersistentTCState -> PersistentTCState) -> TCM ()
+modifyPersistentState :: (PersistentTCState -> PersistentTCState) -> TCM' ctxty ()
 modifyPersistentState = modifyTC . updatePersistentState
 
 -- | Lens for 'stAccumStatistics'.
@@ -202,18 +202,18 @@ localScope m = do
   return x
 
 -- | Scope error.
-notInScopeError :: C.QName -> TCM a
+notInScopeError :: IsContextType ctxty => C.QName -> TCM' ctxty a
 notInScopeError x = do
   printScope "unbound" 5 ""
   typeError $ NotInScope [x]
 
-notInScopeWarning :: C.QName -> TCM ()
+notInScopeWarning :: IsContextType ctxty => C.QName -> TCM' ctxty ()
 notInScopeWarning x = do
   printScope "unbound" 5 ""
   warning $ NotInScopeW [x]
 
 -- | Debug print the scope.
-printScope :: String -> Int -> String -> TCM ()
+printScope :: IsContextType ctxty => String -> Int -> String -> TCM' ctxty ()
 printScope tag v s = verboseS ("scope." ++ tag) v $ do
   scope <- getScope
   reportSDoc ("scope." ++ tag) v $ return $ vcat [ text s, pretty scope ]
@@ -358,15 +358,15 @@ addForeignCode backend code = do
 -- * Interaction output callback
 ---------------------------------------------------------------------------
 
-getInteractionOutputCallback :: TCM InteractionOutputCallback
+getInteractionOutputCallback :: TCM' ctxty WrappedIOC
 getInteractionOutputCallback
-  = getsTC $ stInteractionOutputCallback . stPersistentState
+  = getsTC (\s -> WrappedIOC$ stInteractionOutputCallback$ stPersistentState s)
 
-appInteractionOutputCallback :: Response -> TCM ()
+appInteractionOutputCallback :: IsContextType ctxty => Response -> TCM' ctxty ()
 appInteractionOutputCallback r
-  = getInteractionOutputCallback >>= \ cb -> cb r
+  = getInteractionOutputCallback >>= \ (WrappedIOC cb) -> cb r
 
-setInteractionOutputCallback :: InteractionOutputCallback -> TCM ()
+setInteractionOutputCallback :: InteractionOutputCallback -> TCM' ctxty ()
 setInteractionOutputCallback cb
   = modifyPersistentState $ \ s -> s { stInteractionOutputCallback = cb }
 

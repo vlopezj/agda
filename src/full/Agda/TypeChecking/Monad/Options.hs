@@ -16,6 +16,7 @@ import Agda.TypeChecking.Monad.Base
 import Agda.TypeChecking.Monad.State
 import Agda.TypeChecking.Monad.Benchmark
 import Agda.Interaction.Options
+import Agda.Interaction.Response (WrappedIOC(..))
 import qualified Agda.Interaction.Options.Lenses as Lens
 import Agda.Interaction.Library
 import Agda.Utils.FileName
@@ -185,7 +186,7 @@ setIncludeDirs incs root = do
   -- "old-path/M.agda", when the user actually meant
   -- "new-path/M.agda".
   when (oldIncs /= incs) $ do
-    ho <- getInteractionOutputCallback
+    (WrappedIOC ho) <- getInteractionOutputCallback
     tcWarnings <- useTC stTCWarnings -- restore already generated warnings
     resetAllState
     setTCLens stTCWarnings tcWarnings

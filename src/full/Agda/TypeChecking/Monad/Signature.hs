@@ -659,7 +659,7 @@ class ( Functor m
       , Fail.MonadFail m
       , HasOptions m
       , MonadDebug m
-      , MonadTCEnv m
+      , MonadTCEnv' m
       ) => HasConstInfo m where
   -- | Lookup the definition of a name. The result is a closed thing, all free
   --   variables have been abstracted over.
@@ -704,7 +704,7 @@ defaultGetRewriteRulesFor getTCState q = do
 getOriginalProjection :: HasConstInfo m => QName -> m QName
 getOriginalProjection q = projOrig . fromMaybe __IMPOSSIBLE__ <$> isProjection q
 
-instance HasConstInfo (TCMT IO) where
+instance IsContextType ctxty => HasConstInfo (TCMT' ctxty IO) where
   getRewriteRulesFor = defaultGetRewriteRulesFor getTC
   getConstInfo' q = do
     st  <- getTC
@@ -716,8 +716,8 @@ instance HasConstInfo (TCMT IO) where
       Left SigAbstract      -> notInScopeError $ qnameToConcrete q
 
 defaultGetConstInfo
-  :: (HasOptions m, MonadDebug m, MonadTCEnv m)
-  => TCState -> TCEnv -> QName -> m (Either SigError Definition)
+  :: (HasOptions m, MonadDebug m, MonadTCEnv' m)
+  => TCState -> TCEnvOf m -> QName -> m (Either SigError Definition)
 defaultGetConstInfo st env q = do
     let defs  = st^.(stSignature . sigDefinitions)
         idefs = st^.(stImports . sigDefinitions)

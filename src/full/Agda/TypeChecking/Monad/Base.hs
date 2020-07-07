@@ -10,6 +10,7 @@ module Agda.TypeChecking.Monad.Base where
 import Prelude hiding (null)
 import GHC.Stack ( freezeCallStack, callStack, HasCallStack )
 import qualified Data.Kind as Hs
+import Data.Typeable (Typeable)
 
 import Control.Applicative hiding (empty)
 import qualified Control.Concurrent as C
@@ -983,6 +984,7 @@ data Closure' ctxty a = Closure
 
 type Closure a = Closure' Type a
 type ClosureU a = Closure' TwinT a
+type ClosureOf m = Closure' (ContextType m)
 
 instance Show a => Show (Closure a) where
   show cl = "Closure { clValue = " ++ show (clValue cl) ++ " }"
@@ -999,7 +1001,7 @@ instance LensClosure a (Closure a) where
 instance LensTCEnv (Closure a) where
   lensTCEnv f cl = (f $! clEnv cl) <&> \ env -> cl { clEnv = env }
 
-buildClosure :: (MonadTCEnv m, ReadTCState m) => a -> m (Closure a)
+buildClosure :: (MonadTCEnv' m, ReadTCState m) => a -> m (Closure' (ContextType m) a)
 buildClosure x = do
     env   <- askTC
     sig   <- useR stSignature
@@ -2744,7 +2746,7 @@ data TCEnv' ctxty =
           , envClause :: IPClause
                 -- ^ What is the current clause we are type-checking?
                 --   Will be recorded in interaction points in this clause.
-          , envCall  :: Maybe (Closure Call)
+          , envCall  :: Maybe (Closure' ctxty Call)
                 -- ^ what we're doing at the moment
           , envHighlightingLevel  :: HighlightingLevel
                 -- ^ Set to 'None' when imported modules are
@@ -2989,7 +2991,7 @@ eCall f e = f (envCall e) <&> \ x -> e { envCall = x }
 eHighlightingLevel :: Lens' HighlightingLevel TCEnv
 eHighlightingLevel f e = f (envHighlightingLevel e) <&> \ x -> e { envHighlightingLevel = x }
 
-eHighlightingMethod :: Lens' HighlightingMethod TCEnv
+eHighlightingMethod :: Lens' HighlightingMethod (TCEnv' ctxty)
 eHighlightingMethod f e = f (envHighlightingMethod e) <&> \ x -> e { envHighlightingMethod = x }
 
 eModuleNestingLevel :: Lens' Int TCEnv
@@ -3025,7 +3027,7 @@ eUnquoteFlags f e = f (envUnquoteFlags e) <&> \ x -> e { envUnquoteFlags = x }
 eInstanceDepth :: Lens' Int TCEnv
 eInstanceDepth f e = f (envInstanceDepth e) <&> \ x -> e { envInstanceDepth = x }
 
-eIsDebugPrinting :: Lens' Bool TCEnv
+eIsDebugPrinting :: Lens' Bool (TCEnv' ctxty)
 eIsDebugPrinting f e = f (envIsDebugPrinting e) <&> \ x -> e { envIsDebugPrinting = x }
 
 ePrintingPatternLambdas :: Lens' [QName] TCEnv
@@ -3034,10 +3036,10 @@ ePrintingPatternLambdas f e = f (envPrintingPatternLambdas e) <&> \ x -> e { env
 eCallByNeed :: Lens' Bool TCEnv
 eCallByNeed f e = f (envCallByNeed e) <&> \ x -> e { envCallByNeed = x }
 
-eCurrentCheckpoint :: Lens' CheckpointId TCEnv
+eCurrentCheckpoint :: Lens' CheckpointId (TCEnv' ctxty)
 eCurrentCheckpoint f e = f (envCurrentCheckpoint e) <&> \ x -> e { envCurrentCheckpoint = x }
 
-eCheckpoints :: Lens' (Map CheckpointId Substitution) TCEnv
+eCheckpoints :: Lens' (Map CheckpointId Substitution) (TCEnv' ctxty)
 eCheckpoints f e = f (envCheckpoints e) <&> \ x -> e { envCheckpoints = x }
 
 eGeneralizeMetas :: Lens' DoGeneralize TCEnv
@@ -3650,12 +3652,12 @@ data LHSOrPatSyn = IsLHS | IsPatSyn deriving (Eq, Show)
 -- | Type-checking errors.
 
 data TCErr
-  = TypeError
+  = forall ctxty. IsContextType ctxty => TypeError
     { tcErrFileLine :: AgdaSourceErrorLocation
        -- ^ File and line the error was raised at
     , tcErrState    :: TCState
         -- ^ The state in which the error was raised.
-    , tcErrClosErr  :: Closure TypeError
+    , tcErrClosErr  :: Closure' ctxty TypeError
         -- ^ The environment in which the error as raised plus the error.
     }
   | Exception Range Doc
@@ -3697,7 +3699,7 @@ class (Functor m, Applicative m, Monad m) => HasOptions m where
   default commandLineOptions :: (HasOptions n, MonadTrans t, m ~ t n) => m CommandLineOptions
   commandLineOptions = lift commandLineOptions
 
-instance MonadIO m => HasOptions (TCMT m) where
+instance (MonadIO m, IsContextType ctxty) => HasOptions (TCMT' ctxty m) where
   pragmaOptions = useTC stPragmaOptions
 
   commandLineOptions = do
@@ -3879,7 +3881,7 @@ instance (Monoid w, MonadReduce m) => MonadReduce (WriterT w m)
 
 -- | @MonadTCEnv@ made into its own dedicated service class.
 --   This allows us to use 'MonadReader' for 'ReaderT' extensions of @TCM@.
-class Monad m => MonadTCEnv' m where
+class (Monad m, IsContextType (ContextType m)) => MonadTCEnv' m where
   type ContextType m :: Hs.Type
   askTC   :: m (TCEnvOf m)
   localTC :: (TCEnvOf m -> TCEnvOf m) -> m a -> m a
@@ -3893,6 +3895,13 @@ class Monad m => MonadTCEnv' m where
         ContextType n ~ ContextType m)
     =>  (TCEnvOf m -> TCEnvOf m) -> m a -> m a
   localTC = liftThrough . localTC
+
+class (Show ctxty,
+       Typeable ctxty,
+       Pretty ctxty) => IsContextType ctxty where
+
+instance IsContextType Type
+instance IsContextType TwinT
 
 type MonadTCEnv m = (MonadTCEnv' m, ContextType m ~ Type)
 type TCEnvOf m = TCEnv' (ContextType m)
@@ -3923,14 +3932,14 @@ instance MonadTCEnv' m => MonadTCEnv' (ListT m) where
   type ContextType (ListT m) = ContextType m
   localTC = mapListT . localTC
 
-asksTC :: MonadTCEnv m => (TCEnv -> a) -> m a
+asksTC :: MonadTCEnv' m => (TCEnvOf m -> a) -> m a
 asksTC f = f <$> askTC
 
-viewTC :: MonadTCEnv m => Lens' a TCEnv -> m a
+viewTC :: MonadTCEnv' m => Lens' a (TCEnvOf m) -> m a
 viewTC l = asksTC (^. l)
 
 -- | Modify the lens-indicated part of the @TCEnv@ in a subcomputation.
-locallyTC :: MonadTCEnv m => Lens' a TCEnv -> (a -> a) -> m b -> m b
+locallyTC :: MonadTCEnv' m => Lens' a (TCEnvOf m) -> (a -> a) -> m b -> m b
 locallyTC l = localTC . over l
 
 ---------------------------------------------------------------------------
@@ -4057,7 +4066,7 @@ type TCM = TCM' Type
 type TCMU = TCM' TwinT
 
 {-# SPECIALIZE INLINE mapTCMT :: (forall a. IO a -> IO a) -> TCM a -> TCM a #-}
-mapTCMT :: (forall a. m a -> n a) -> TCMT m a -> TCMT n a
+mapTCMT :: (forall a. m a -> n a) -> TCMT' ctxty m a -> TCMT' ctxty n a
 mapTCMT f (TCM m) = TCM $ \ s e -> f (m s e)
 
 pureTCM :: MonadIO m => (TCState -> TCEnv -> a) -> TCMT m a
@@ -4075,38 +4084,38 @@ pureTCM f = TCM $ \ r e -> do
 -- [1] When compiled with -auto-all and run with -p: roughly 750%
 -- faster for one example.
 
-returnTCMT :: MonadIO m => a -> TCMT m a
+returnTCMT :: MonadIO m => a -> TCMT' ctxty m a
 returnTCMT = \x -> TCM $ \_ _ -> return x
 {-# INLINE returnTCMT #-}
 
-bindTCMT :: MonadIO m => TCMT m a -> (a -> TCMT m b) -> TCMT m b
+bindTCMT :: MonadIO m => TCMT' ctxty m a -> (a -> TCMT' ctxty m b) -> TCMT' ctxty m b
 bindTCMT = \(TCM m) k -> TCM $ \r e -> m r e >>= \x -> unTCM (k x) r e
 {-# INLINE bindTCMT #-}
 
-thenTCMT :: MonadIO m => TCMT m a -> TCMT m b -> TCMT m b
+thenTCMT :: MonadIO m => TCMT' ctxty m a -> TCMT' ctxty m b -> TCMT' ctxty m b
 thenTCMT = \(TCM m1) (TCM m2) -> TCM $ \r e -> m1 r e >> m2 r e
 {-# INLINE thenTCMT #-}
 
-instance MonadIO m => Functor (TCMT m) where
+instance MonadIO m => Functor (TCMT' ctxty m) where
   fmap = fmapTCMT
 
-fmapTCMT :: MonadIO m => (a -> b) -> TCMT m a -> TCMT m b
+fmapTCMT :: MonadIO m => (a -> b) -> TCMT' ctxty m a -> TCMT' ctxty m b
 fmapTCMT = \f (TCM m) -> TCM $ \r e -> fmap f (m r e)
 {-# INLINE fmapTCMT #-}
 
-instance MonadIO m => Applicative (TCMT m) where
+instance MonadIO m => Applicative (TCMT' ctxty m) where
   pure  = returnTCMT
   (<*>) = apTCMT
 
-apTCMT :: MonadIO m => TCMT m (a -> b) -> TCMT m a -> TCMT m b
+apTCMT :: MonadIO m => TCMT' ctxty m (a -> b) -> TCMT' ctxty m a -> TCMT' ctxty m b
 apTCMT = \(TCM mf) (TCM m) -> TCM $ \r e -> ap (mf r e) (m r e)
 {-# INLINE apTCMT #-}
 
-instance MonadTrans TCMT where
+instance MonadTrans (TCMT' ctxty) where
     lift m = TCM $ \_ _ -> m
 
 -- We want a special monad implementation of fail.
-instance MonadIO m => Monad (TCMT m) where
+instance MonadIO m => Monad (TCMT' ctxty m) where
     return = pure
     (>>=)  = bindTCMT
     (>>)   = (*>)
@@ -4114,10 +4123,10 @@ instance MonadIO m => Monad (TCMT m) where
     fail   = Fail.fail
 #endif
 
-instance MonadIO m => Fail.MonadFail (TCMT m) where
+instance (IsContextType ctxty, MonadIO m) => Fail.MonadFail (TCMT' ctxty m) where
   fail = internalError
 
-instance MonadIO m => MonadIO (TCMT m) where
+instance (MonadIO m, IsContextType ctxty) => MonadIO (TCMT' ctxty m) where
   liftIO m = TCM $ \ s env -> do
     liftIO $ wrap s (envRange env) $ do
       x <- m
@@ -4127,20 +4136,20 @@ instance MonadIO m => MonadIO (TCMT m) where
         s <- readIORef s
         E.throwIO $ IOException s r err
 
-instance MonadIO m => MonadTCEnv' (TCMT m) where
-  type ContextType (TCMT m) = Type
+instance (MonadIO m, IsContextType ctxty) => MonadTCEnv' (TCMT' ctxty m) where
+  type ContextType (TCMT' ctxty m) = ctxty
   askTC             = TCM $ \ _ e -> return e
   localTC f (TCM m) = TCM $ \ s e -> m s (f e)
 
-instance MonadIO m => MonadTCState (TCMT m) where
+instance (MonadIO m) => MonadTCState (TCMT' ctxty m) where
   getTC   = TCM $ \ r _e -> liftIO (readIORef r)
   putTC s = TCM $ \ r _e -> liftIO (writeIORef r s)
 
-instance MonadIO m => ReadTCState (TCMT m) where
+instance (MonadIO m) => ReadTCState (TCMT' ctxty m) where
   getTCState = getTC
   locallyTCState l f = bracket_ (useTC l <* modifyTCLens l f) (setTCLens l)
 
-instance MonadError TCErr TCM where
+instance (IsContextType ctxty) => MonadError TCErr (TCM' ctxty) where
   throwError = liftIO . E.throwIO
   catchError m h = TCM $ \ r e -> do  -- now we are in the IO monad
     oldState <- readIORef r
@@ -4160,7 +4169,7 @@ instance MonadError TCErr TCM where
 --
 --   The intended use is to catch internal errors during debug printing.
 --   In debug printing, we are not expecting state changes.
-instance CatchImpossible TCM where
+instance CatchImpossible (TCM' ctxty) where
   catchImpossibleJust f m h = TCM $ \ r e -> do
     -- save the state
     s <- readIORef r
@@ -4171,7 +4180,7 @@ instance CatchImpossible TCM where
 instance MonadIO m => MonadReduce (TCMT m) where
   liftReduce = liftTCM . runReduceM
 
-instance (IsString a, MonadIO m) => IsString (TCMT m a) where
+instance (IsString a, MonadIO m) => IsString (TCMT' ctxty m a) where
   fromString s = return (fromString s)
 
 -- | Strict (non-shortcut) semigroup.
@@ -4180,16 +4189,16 @@ instance (IsString a, MonadIO m) => IsString (TCMT m a) where
 --   for TCM All we might want 'Agda.Utils.Monad.and2M' as concatenation,
 --   to shortcut conjunction in case we already have 'False'.
 --
-instance {-# OVERLAPPABLE #-} (MonadIO m, Semigroup a) => Semigroup (TCMT m a) where
+instance {-# OVERLAPPABLE #-} (MonadIO m, Semigroup a) => Semigroup (TCMT' ctxty m a) where
   (<>) = liftA2 (<>)
 
 -- | Strict (non-shortcut) monoid.
-instance {-# OVERLAPPABLE #-} (MonadIO m, Semigroup a, Monoid a) => Monoid (TCMT m a) where
+instance {-# OVERLAPPABLE #-} (MonadIO m, Semigroup a, Monoid a) => Monoid (TCMT' ctxty m a) where
   mempty  = pure mempty
   mappend = (<>)
   mconcat = mconcat <.> sequence
 
-instance {-# OVERLAPPABLE #-} (MonadIO m, Null a) => Null (TCMT m a) where
+instance {-# OVERLAPPABLE #-} (MonadIO m, Null a) => Null (TCMT' ctxty m a) where
   empty = return empty
   null  = __IMPOSSIBLE__
 
@@ -4205,7 +4214,7 @@ instance MonadError TCErr IM where
   catchError m h = liftTCM $ runIM m `catchError` (runIM . h)
 
 -- | Preserve the state of the failing computation.
-catchError_ :: TCM a -> (TCErr -> TCM a) -> TCM a
+catchError_ :: TCM' ctxty a -> (TCErr -> TCM' ctxty a) -> TCM' ctxty a
 catchError_ m h = TCM $ \r e ->
   unTCM m r e
   `E.catch` \err -> unTCM (h err) r e
@@ -4214,7 +4223,7 @@ catchError_ m h = TCM $ \r e ->
 --   Does not catch any errors.
 --   In case both the regular computation and the finalizer
 --   throw an exception, the one of the finalizer is propagated.
-finally_ :: TCM a -> TCM b -> TCM a
+finally_ :: IsContextType ctxty => TCM' ctxty a -> TCM' ctxty b -> TCM' ctxty a
 finally_ m f = do
     x <- m `catchError_` \ err -> f >> throwError err
     _ <- f
@@ -4223,17 +4232,18 @@ finally_ m f = do
 -- | Embedding a TCM computation.
 
 class ( Applicative tcm, MonadIO tcm
-      , MonadTCEnv tcm
+      , MonadTCEnv' tcm
       , MonadTCState tcm
       , HasOptions tcm
       ) => MonadTCM tcm where
-    liftTCM :: TCM a -> tcm a
+    liftTCM :: TCM' (ContextType tcm) a -> tcm a
 
-    default liftTCM :: (MonadTCM m, MonadTrans t, tcm ~ t m) => TCM a -> tcm a
+    default liftTCM :: (MonadTCM m, MonadTrans t, tcm ~ t m,
+                        ContextType m ~ ContextType tcm) => TCM' (ContextType tcm) a -> tcm a
     liftTCM = lift . liftTCM
 
 {-# RULES "liftTCM/id" liftTCM = id #-}
-instance MonadIO m => MonadTCM (TCMT m) where
+instance (MonadIO m, IsContextType ctxty) => MonadTCM (TCMT' ctxty m) where
     liftTCM = mapTCMT liftIO
 
 instance MonadTCM tcm => MonadTCM (ChangeT tcm)
@@ -4248,7 +4258,7 @@ instance (Monoid w, MonadTCM tcm) => MonadTCM (WriterT w tcm)
 -- | We store benchmark statistics in an IORef.
 --   This enables benchmarking pure computation, see
 --   "Agda.Benchmarking".
-instance MonadBench Phase TCM where
+instance IsContextType ctxty => MonadBench Phase (TCM' ctxty) where
   getBenchmark = liftIO $ getBenchmark
   putBenchmark = liftIO . putBenchmark
   finally = finally_
@@ -4266,6 +4276,7 @@ internalError s = withFileAndLine $ \ file line ->
 
 -- | The constraints needed for 'typeError' and similar.
 type MonadTCError m = (MonadTCEnv m, ReadTCState m, MonadError TCErr m)
+type MonadTCError' m = (MonadTCEnv' m, ReadTCState m, MonadError TCErr m)
 
 genericError :: (HasCallStack, MonadTCError m) => String -> m a
 genericError = withFileAndLine $ \ file line ->
@@ -4277,16 +4288,16 @@ genericDocError = withFileAndLine $ \ file line ->
   typeError' (AgdaSourceErrorLocation file line) . GenericDocError
 
 {-# SPECIALIZE typeError' :: AgdaSourceErrorLocation -> TypeError -> TCM a #-}
-typeError' :: MonadTCError m => AgdaSourceErrorLocation -> TypeError -> m a
+typeError' :: MonadTCError' m => AgdaSourceErrorLocation -> TypeError -> m a
 typeError' fl err = throwError =<< typeError'_ fl err
 
 {-# SPECIALIZE typeError :: HasCallStack => TypeError -> TCM a #-}
-typeError :: (HasCallStack, MonadTCError m) => TypeError -> m a
+typeError :: (HasCallStack, MonadTCError' m) => TypeError -> m a
 typeError err = withFileAndLine' (freezeCallStack callStack) $ \ file line ->
   throwError =<< typeError'_ (AgdaSourceErrorLocation file line) err
 
 {-# SPECIALIZE typeError'_ :: AgdaSourceErrorLocation -> TypeError -> TCM TCErr #-}
-typeError'_ :: (MonadTCEnv m, ReadTCState m) => AgdaSourceErrorLocation -> TypeError -> m TCErr
+typeError'_ :: (MonadTCEnv' m, ReadTCState m) => AgdaSourceErrorLocation -> TypeError -> m TCErr
 typeError'_ fl err = TypeError fl <$> getTCState <*> buildClosure err
 
 {-# SPECIALIZE typeError_ :: HasCallStack => TypeError -> TCM TCErr #-}

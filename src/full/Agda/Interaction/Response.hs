@@ -16,6 +16,7 @@ module Agda.Interaction.Response
   , Status (..)
   , GiveResult (..)
   , InteractionOutputCallback
+  , WrappedIOC(..)
   , defaultInteractionOutputCallback
   ) where
 
@@ -29,7 +30,8 @@ import Agda.Syntax.Concrete.Name (NameInScope)
 import Agda.Syntax.Scope.Base (AbstractModule, AbstractName, LocalVar)
 import qualified Agda.Syntax.Internal as I
 import {-# SOURCE #-} Agda.TypeChecking.Monad.Base
-  (TCM, TCErr, TCWarning, HighlightingMethod, ModuleToSource, NamedMeta, TCWarning, IPBoundary')
+  (TCM', TCErr, TCWarning, HighlightingMethod, ModuleToSource,
+   IsContextType, NamedMeta, TCWarning, IPBoundary')
 import Agda.TypeChecking.Warnings (WarningsAndNonFatalErrors)
 import Agda.Utils.Impossible
 import Agda.Utils.Time
@@ -186,7 +188,8 @@ data GiveResult
 --      closure of the 'InteractionOutputCallback' function.
 --      (suitable for intra-process communication).
 
-type InteractionOutputCallback = Response -> TCM ()
+type InteractionOutputCallback = forall ctxty. IsContextType ctxty => Response -> TCM' ctxty ()
+newtype WrappedIOC = WrappedIOC { unwrapIOC :: InteractionOutputCallback }
 
 -- | The default 'InteractionOutputCallback' function prints certain
 -- things to stdout (other things generate internal errors).

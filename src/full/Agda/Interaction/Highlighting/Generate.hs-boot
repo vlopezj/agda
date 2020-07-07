@@ -1,5 +1,5 @@
 module Agda.Interaction.Highlighting.Generate where
 
-import Agda.TypeChecking.Monad.Base (TCM, TCWarning)
+import Agda.TypeChecking.Monad.Base (TCM', TCWarning)
 
-highlightWarning :: TCWarning -> TCM ()
+highlightWarning :: TCWarning -> TCM' ctxty ()

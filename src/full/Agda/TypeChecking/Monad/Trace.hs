@@ -99,7 +99,7 @@ traceCall call m = do
   cl <- liftTCM $ buildClosure call
   traceClosureCall cl m
 
-traceClosureCall :: (MonadTCM tcm, ReadTCState tcm, MonadDebug tcm) => Closure Call -> tcm a -> tcm a
+traceClosureCall :: (MonadTCM tcm, ReadTCState tcm, MonadDebug tcm) => Closure' (ContextType tcm) Call -> tcm a -> tcm a
 traceClosureCall cl m = do
 
   -- Andreas, 2016-09-13 issue #2177

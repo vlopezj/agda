@@ -6,7 +6,7 @@ import Control.Monad.State
 
 import qualified Control.Monad.Fail as Fail
 
-import Agda.TypeChecking.Monad.Base (TCMT, Builtin, PrimFun)
+import Agda.TypeChecking.Monad.Base (TCMT', IsContextType, Builtin, PrimFun)
 
 class ( Functor m
       , Applicative m
@@ -17,4 +17,4 @@ class ( Functor m
 instance HasBuiltins m => HasBuiltins (ReaderT e m)
 instance HasBuiltins m => HasBuiltins (StateT s m)
 
-instance MonadIO m => HasBuiltins (TCMT m)
+instance (MonadIO m, IsContextType ctxty) => HasBuiltins (TCMT' ctxty m) where

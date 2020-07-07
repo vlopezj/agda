@@ -11,7 +11,7 @@ import Agda.Syntax.Internal
 import Agda.Syntax.Position
 import Agda.TypeChecking.Monad.Base
 
-checkpointSubstitution :: MonadTCEnv tcm => CheckpointId -> tcm Substitution
+checkpointSubstitution :: MonadTCEnv' tcm => CheckpointId -> tcm Substitution
 
 class MonadTCEnv' m => MonadAddContext' m where
   -- | @addCtx x arg cont@ add a variable to the context.

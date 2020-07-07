@@ -47,7 +47,7 @@ import Agda.Utils.Impossible
 -- | Modify a 'Context' in a computation.  Warning: does not update
 --   the checkpoints. Use @updateContext@ instead.
 {-# SPECIALIZE unsafeModifyContext :: (Context -> Context) -> TCM a -> TCM a #-}
-unsafeModifyContext :: MonadTCEnv tcm => (Context -> Context) -> tcm a -> tcm a
+unsafeModifyContext :: MonadTCEnv' tcm => (ContextOf tcm -> ContextOf tcm) -> tcm a -> tcm a
 unsafeModifyContext f = localTC $ \e -> e { envContext = f $ envContext e }
 
 -- | Modify the 'Dom' part of context entries.
@@ -127,11 +127,11 @@ checkpoint sub k = do
   return x
 
 -- | Get the substitution from the context at a given checkpoint to the current context.
-checkpointSubstitution :: MonadTCEnv tcm => CheckpointId -> tcm Substitution
+checkpointSubstitution :: MonadTCEnv' tcm => CheckpointId -> tcm Substitution
 checkpointSubstitution = maybe __IMPOSSIBLE__ return <=< checkpointSubstitution'
 
 -- | Get the substitution from the context at a given checkpoint to the current context.
-checkpointSubstitution' :: MonadTCEnv tcm => CheckpointId -> tcm (Maybe Substitution)
+checkpointSubstitution' :: MonadTCEnv' tcm => CheckpointId -> tcm (Maybe Substitution)
 checkpointSubstitution' chkpt = viewTC (eCheckpoints . key chkpt)
 
 -- | Get substitution @Γ ⊢ ρ : Γm@ where @Γ@ is the current context
@@ -419,17 +419,17 @@ addLetBinding info x v t0 ret = addLetBinding' x v (defaultArgDom info t0) ret
 
 -- | Get the current context.
 {-# SPECIALIZE getContext :: TCM [Dom (Name, Type)] #-}
-getContext :: MonadTCEnv m => m [Dom (Name, Type)]
+getContext :: MonadTCEnv' m => m [Dom (Name, ContextType m)]
 getContext = asksTC envContext
 
 -- | Get the size of the current context.
 {-# SPECIALIZE getContextSize :: TCM Nat #-}
-getContextSize :: (Applicative m, MonadTCEnv m) => m Nat
+getContextSize :: (Applicative m, MonadTCEnv' m) => m Nat
 getContextSize = length <$> asksTC envContext
 
 -- | Generate @[var (n - 1), ..., var 0]@ for all declarations in the context.
 {-# SPECIALIZE getContextArgs :: TCM Args #-}
-getContextArgs :: (Applicative m, MonadTCEnv m) => m Args
+getContextArgs :: (Applicative m, MonadTCEnv' m) => m Args
 getContextArgs = reverse . zipWith mkArg [0..] <$> getContext
   where mkArg i dom = var i <$ argFromDom dom
 
@@ -440,7 +440,7 @@ getContextTerms = map var . downFrom <$> getContextSize
 
 -- | Get the current context as a 'Telescope'.
 {-# SPECIALIZE getContextTelescope :: TCM Telescope #-}
-getContextTelescope :: (Applicative m, MonadTCEnv m) => m Telescope
+getContextTelescope :: (Applicative m, MonadTCEnv' m) => m (Telescope' (ContextType m))
 getContextTelescope = telFromList' nameToArgName . reverse <$> getContext
 
 -- | Get the names of all declarations in the context.

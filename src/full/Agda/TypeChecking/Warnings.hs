@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeFamilies #-} -- for type equality ~
 
 module Agda.TypeChecking.Warnings
-  ( MonadWarning(..)
+  ( MonadWarning'(..), MonadWarning
   , genericWarning
   , genericNonFatalError
   , warning'_, warning_, warning', warning, warnings
@@ -56,19 +56,21 @@ import Agda.Utils.Impossible
 -- * The warning monad
 ---------------------------------------------------------------------------
 
-class (MonadPretty m, MonadError TCErr m) => MonadWarning m where
+class (MonadError TCErr m) => MonadWarning' m where
   -- | Store a warning and generate highlighting from it.
   addWarning :: TCWarning -> m ()
 
   default addWarning
-    :: (MonadWarning n, MonadTrans t, t n ~ m)
+    :: (MonadWarning' n, MonadTrans t, t n ~ m)
     => TCWarning -> m ()
   addWarning = lift . addWarning
 
-instance MonadWarning m => MonadWarning (ReaderT r m)
-instance MonadWarning m => MonadWarning (StateT s m)
+type MonadWarning m = (MonadPretty m, MonadWarning' m)
 
-instance MonadWarning TCM where
+instance MonadWarning' m => MonadWarning' (ReaderT r m)
+instance MonadWarning' m => MonadWarning' (StateT s m)
+
+instance IsContextType ctxty => MonadWarning' (TCM' ctxty) where
   addWarning tcwarn = do
     stTCWarnings `modifyTCLens` add w' tcwarn
     highlightWarning tcwarn
@@ -91,7 +93,7 @@ genericNonFatalError :: MonadWarning m => P.Doc -> m ()
 genericNonFatalError = warning . GenericNonFatalError
 
 {-# SPECIALIZE warning'_ :: AgdaSourceErrorLocation -> Warning -> TCM TCWarning #-}
-warning'_ :: (MonadWarning m) => AgdaSourceErrorLocation -> Warning -> m TCWarning
+warning'_ :: (MonadWarning' m) => AgdaSourceErrorLocation -> Warning -> m TCWarning
 warning'_ fl w = do
   r <- viewTC eRange
   c <- viewTC eCall
@@ -118,7 +120,7 @@ warning_ w = withFileAndLine $ \ file line ->
 --  AllWarnings   -> w <$ guard (Set.member (warningName w) $ wm ^. warningSet)
 
 {-# SPECIALIZE warnings' :: AgdaSourceErrorLocation -> [Warning] -> TCM () #-}
-warnings' :: MonadWarning m => AgdaSourceErrorLocation -> [Warning] -> m ()
+warnings' :: MonadWarning' m => AgdaSourceErrorLocation -> [Warning] -> m ()
 warnings' fl ws = do
 
   wmode <- optWarningMode <$> pragmaOptions
@@ -136,16 +138,16 @@ warnings' fl ws = do
   unless (null errs) $ typeError' fl $ NonFatalErrors errs
 
 {-# SPECIALIZE warnings :: HasCallStack => [Warning] -> TCM () #-}
-warnings :: (HasCallStack, MonadWarning m) => [Warning] -> m ()
+warnings :: (HasCallStack, MonadWarning' m) => [Warning] -> m ()
 warnings ws = withFileAndLine' (freezeCallStack callStack) $ \ file line ->
   warnings' (AgdaSourceErrorLocation file line) ws
 
 {-# SPECIALIZE warning' :: AgdaSourceErrorLocation -> Warning -> TCM () #-}
-warning' :: MonadWarning m => AgdaSourceErrorLocation -> Warning -> m ()
+warning' :: MonadWarning' m => AgdaSourceErrorLocation -> Warning -> m ()
 warning' fl = warnings' fl . pure
 
 {-# SPECIALIZE warning :: HasCallStack => Warning -> TCM () #-}
-warning :: (HasCallStack, MonadWarning m) => Warning -> m ()
+warning :: (HasCallStack, MonadWarning' m) => Warning -> m ()
 warning w = withFileAndLine' (freezeCallStack callStack)  $ \ file line ->
   warning' (AgdaSourceErrorLocation file line) w
 

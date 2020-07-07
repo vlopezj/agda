@@ -35,12 +35,15 @@ newtype TCMT' ctxty m a = TCM { unTCM :: IORef TCState -> TCEnv' ctxty -> m a }
 
 type TCMT = TCMT' Type
 
-instance MonadIO m => Applicative (TCMT m)
-instance MonadIO m => Functor (TCMT m)
-instance MonadIO m => Monad (TCMT m)
-instance MonadIO m => MonadIO (TCMT m)
+class IsContextType ctxty
+
+instance MonadIO m => Applicative (TCMT' ctxty m)
+instance MonadIO m => Functor (TCMT' ctxty m)
+instance MonadIO m => Monad (TCMT' ctxty m)
+instance (MonadIO m, IsContextType ctxty) => MonadIO (TCMT' ctxty m)
 
 type TCM = TCMT IO
+type TCM' ctxty = TCMT' ctxty IO
 
 type ModuleToSource = Map TopLevelModuleName AbsolutePath
 

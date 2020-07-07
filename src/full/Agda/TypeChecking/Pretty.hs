@@ -158,7 +158,7 @@ type MonadPretty m =
 
 -- | This instance is more specific than a generic instance
 -- @Semigroup a => Semigroup (TCM a)@.
-instance {-# OVERLAPPING #-} Semigroup (TCM Doc)         where (<>) = liftA2 (<>)
+instance {-# OVERLAPPING #-} Semigroup (TCM' ctxty Doc)  where (<>) = liftA2 (<>)
 instance Applicative m    => Semigroup (ReaderT s m Doc) where (<>) = liftA2 (<>)
 instance Monad m          => Semigroup (StateT s m Doc)  where (<>) = liftA2 (<>)
 

@@ -196,7 +196,7 @@ resolveName_ q cands = either (const UnknownName) id <$> resolveName allKindsOfN
 --   - Read access to the options
 --   - Permission to print debug messages
 type MonadAbsToCon m =
-  ( MonadTCEnv m
+  ( MonadTCEnv' m
   , ReadTCState m
   , MonadStConcreteNames m
   , HasOptions m
@@ -253,6 +253,7 @@ instance HasOptions AbsToCon where
   commandLineOptions = AbsToCon commandLineOptions
 
 instance MonadDebug AbsToCon where
+  type DebugCtxTy AbsToCon = I.Type
   displayDebugMessage k n s = AbsToCon $ displayDebugMessage k n s
   formatDebugMessage k n s = AbsToCon $ formatDebugMessage k n s
   verboseBracket k n s m = AbsToCon $ verboseBracket k n s $ unAbsToCon m

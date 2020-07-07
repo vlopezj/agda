@@ -76,7 +76,7 @@ litType l = case l of
   where
     el t = El (mkType 0) t
 
-instance MonadIO m => HasBuiltins (TCMT m) where
+instance (MonadIO m, IsContextType ctxty) => HasBuiltins (TCMT' ctxty m) where
   getBuiltinThing b = liftM2 mplus (Map.lookup b <$> useTC stLocalBuiltins)
                       (Map.lookup b <$> useTC stImportedBuiltins)
 

@@ -5,6 +5,7 @@ module Agda.TypeChecking.Monad.Debug
   ) where
 
 import GHC.Stack (HasCallStack, freezeCallStack, callStack)
+import qualified Data.Kind as Hs
 
 import qualified Control.Exception as E
 import qualified Control.DeepSeq as DeepSeq (force)
@@ -34,14 +35,17 @@ import qualified Agda.Utils.Trie as Trie
 
 import Agda.Utils.Impossible
 
-class (Functor m, Applicative m, Monad m) => MonadDebug m where
+class (Functor m, Applicative m, Monad m,
+       IsContextType (DebugCtxTy m)) => MonadDebug m where
+  type DebugCtxTy m
+
   displayDebugMessage :: VerboseKey -> VerboseLevel -> String -> m ()
   displayDebugMessage k n s = traceDebugMessage k n s $ return ()
 
   traceDebugMessage :: VerboseKey -> VerboseLevel -> String -> m a -> m a
   traceDebugMessage k n s cont = displayDebugMessage k n s >> cont
 
-  formatDebugMessage :: VerboseKey -> VerboseLevel -> TCM Doc -> m String
+  formatDebugMessage :: VerboseKey -> VerboseLevel -> TCM' (DebugCtxTy m) Doc -> m String
 
   getVerbosity :: m Verbosity
 
@@ -50,12 +54,12 @@ class (Functor m, Applicative m, Monad m) => MonadDebug m where
 
   isDebugPrinting :: m Bool
 
-  default isDebugPrinting :: MonadTCEnv m => m Bool
+  default isDebugPrinting :: MonadTCEnv' m => m Bool
   isDebugPrinting = asksTC envIsDebugPrinting
 
   nowDebugPrinting :: m a -> m a
 
-  default nowDebugPrinting :: MonadTCEnv m => m a -> m a
+  default nowDebugPrinting :: MonadTCEnv' m => m a -> m a
   nowDebugPrinting = locallyTC eIsDebugPrinting $ const True
 
   -- | Print brackets around debug messages issued by a computation.
@@ -78,7 +82,8 @@ catchAndPrintImpossible k n m = catchImpossibleJust catchMe m $ \ imposs -> do
     Unreachable{}           -> False
     ImpMissingDefinitions{} -> False
 
-instance MonadDebug TCM where
+instance IsContextType ctxty => MonadDebug (TCM' ctxty) where
+  type DebugCtxTy (TCM' ctxty) = ctxty
 
   displayDebugMessage k n s = do
     -- Andreas, 2019-08-20, issue #4016:
@@ -103,6 +108,7 @@ instance MonadDebug TCM where
     m `finally` closeVerboseBracket k n
 
 instance MonadDebug m => MonadDebug (ExceptT e m) where
+  type DebugCtxTy (ExceptT e m) = DebugCtxTy m
   displayDebugMessage k n s = lift $ displayDebugMessage k n s
   formatDebugMessage k n d = lift $ formatDebugMessage k n d
   getVerbosity = lift getVerbosity
@@ -111,6 +117,7 @@ instance MonadDebug m => MonadDebug (ExceptT e m) where
   verboseBracket k n s = mapExceptT (verboseBracket k n s)
 
 instance MonadDebug m => MonadDebug (ListT m) where
+  type DebugCtxTy (ListT m) = DebugCtxTy m
   displayDebugMessage k n s = lift $ displayDebugMessage k n s
   formatDebugMessage k n d = lift $ formatDebugMessage k n d
   getVerbosity = lift getVerbosity
@@ -119,6 +126,7 @@ instance MonadDebug m => MonadDebug (ListT m) where
   verboseBracket k n s = liftListT $ verboseBracket k n s
 
 instance MonadDebug m => MonadDebug (MaybeT m) where
+  type DebugCtxTy (MaybeT m) = DebugCtxTy m
   displayDebugMessage k n s = lift $ displayDebugMessage k n s
   formatDebugMessage k n d = lift $ formatDebugMessage k n d
   getVerbosity = lift getVerbosity
@@ -127,6 +135,7 @@ instance MonadDebug m => MonadDebug (MaybeT m) where
   verboseBracket k n s = MaybeT . verboseBracket k n s . runMaybeT
 
 instance MonadDebug m => MonadDebug (ReaderT r m) where
+  type DebugCtxTy (ReaderT r m) = DebugCtxTy m
   displayDebugMessage k n s = lift $ displayDebugMessage k n s
   formatDebugMessage k n d = lift $ formatDebugMessage k n d
   getVerbosity = lift getVerbosity
@@ -135,6 +144,7 @@ instance MonadDebug m => MonadDebug (ReaderT r m) where
   verboseBracket k n s = mapReaderT $ verboseBracket k n s
 
 instance MonadDebug m => MonadDebug (StateT s m) where
+  type DebugCtxTy (StateT s m) = DebugCtxTy m
   displayDebugMessage k n s = lift $ displayDebugMessage k n s
   formatDebugMessage k n d = lift $ formatDebugMessage k n d
   getVerbosity = lift getVerbosity
@@ -143,6 +153,7 @@ instance MonadDebug m => MonadDebug (StateT s m) where
   verboseBracket k n s = mapStateT $ verboseBracket k n s
 
 instance (MonadDebug m, Monoid w) => MonadDebug (WriterT w m) where
+  type DebugCtxTy (WriterT w m) = DebugCtxTy m
   displayDebugMessage k n s = lift $ displayDebugMessage k n s
   formatDebugMessage k n d = lift $ formatDebugMessage k n d
   getVerbosity = lift getVerbosity
@@ -151,6 +162,7 @@ instance (MonadDebug m, Monoid w) => MonadDebug (WriterT w m) where
   verboseBracket k n s = mapWriterT $ verboseBracket k n s
 
 instance MonadDebug m => MonadDebug (ChangeT m) where
+  type DebugCtxTy (ChangeT m) = DebugCtxTy m
   displayDebugMessage k n s = lift $ displayDebugMessage k n s
   formatDebugMessage k n d  = lift $ formatDebugMessage k n d
   getVerbosity              = lift $ getVerbosity
@@ -159,6 +171,7 @@ instance MonadDebug m => MonadDebug (ChangeT m) where
   verboseBracket k n s      = mapChangeT $ verboseBracket k n s
 
 instance MonadDebug m => MonadDebug (IdentityT m) where
+  type DebugCtxTy (IdentityT m) = DebugCtxTy m
   displayDebugMessage k n s = lift $ displayDebugMessage k n s
   formatDebugMessage k n d  = lift $ formatDebugMessage k n d
   getVerbosity              = lift $ getVerbosity
@@ -177,12 +190,19 @@ instance MonadDebug m => MonadDebug (IdentityT m) where
 -- Use the legacy functions 'reportSLn' and 'reportSDoc' instead then.
 --
 class ReportS a where
-  reportS :: MonadDebug m => VerboseKey -> VerboseLevel -> a -> m ()
+  type ReportSConstraint a (m :: (Hs.Type -> Hs.Type)) :: Hs.Constraint
+  type ReportSConstraint a m = ()
+  reportS :: (MonadDebug m, ReportSConstraint a m) => VerboseKey -> VerboseLevel -> a -> m ()
 
-instance ReportS (TCM Doc) where reportS = reportSDoc
+instance ReportS (TCM' ctxty Doc) where
+  type ReportSConstraint (TCM' ctxty Doc) m = (DebugCtxTy m ~ ctxty) 
+  reportS = reportSDoc
 instance ReportS String    where reportS = reportSLn
 
-instance ReportS [TCM Doc] where reportS k n = reportSDoc k n . fmap vcat . sequence
+instance ReportS [TCM' ctxty Doc] where
+  type ReportSConstraint [TCM' ctxty Doc] m = (DebugCtxTy m ~ ctxty) 
+  reportS k n = reportSDoc k n . fmap vcat . sequence
+
 instance ReportS [String]  where reportS k n = reportSLn  k n . unlines
 instance ReportS [Doc]     where reportS k n = reportSLn  k n . render . vcat
 instance ReportS Doc       where reportS k n = reportSLn  k n . render
@@ -200,12 +220,14 @@ __IMPOSSIBLE_VERBOSE__ s = do { reportSLn "impossible" 10 s ; throwImpossible er
 
 -- | Conditionally render debug 'Doc' and print it.
 {-# SPECIALIZE reportSDoc :: VerboseKey -> VerboseLevel -> TCM Doc -> TCM () #-}
-reportSDoc :: MonadDebug m => VerboseKey -> VerboseLevel -> TCM Doc -> m ()
+reportSDoc :: (MonadDebug m) =>
+              VerboseKey -> VerboseLevel -> TCM' (DebugCtxTy m) Doc -> m ()
 reportSDoc k n d = verboseS k n $ do
   displayDebugMessage k n . (++ "\n") =<< formatDebugMessage k n (locallyTC eIsDebugPrinting (const True) d)
 
 -- | Debug print the result of a computation.
-reportResult :: MonadDebug m => VerboseKey -> VerboseLevel -> (a -> TCM Doc) -> m a -> m a
+reportResult :: (MonadTCEnv' m, MonadDebug m) =>
+                VerboseKey -> VerboseLevel -> (a -> TCM' (DebugCtxTy m) Doc) -> m a -> m a
 reportResult k n debug action = do
   x <- action
   x <$ reportSDoc k n (debug x)
@@ -224,12 +246,20 @@ unlessDebugPrinting = unlessM isDebugPrinting
 -- Use the legacy functions 'traceSLn' and 'traceSDoc' instead then.
 --
 class TraceS a where
-  traceS :: MonadDebug m => VerboseKey -> VerboseLevel -> a -> m c -> m c
+  type TraceSConstraint a (m :: (Hs.Type -> Hs.Type)) :: Hs.Constraint
+  type TraceSConstraint a m = ()
+  traceS :: (MonadDebug m, TraceSConstraint a m) => VerboseKey -> VerboseLevel -> a -> m c -> m c
 
-instance TraceS (TCM Doc) where traceS = traceSDoc
+instance TraceS (TCM' ctxty Doc) where
+  type TraceSConstraint (TCM' ctxty Doc) m = (DebugCtxTy m ~ ctxty) 
+  traceS = traceSDoc
+
 instance TraceS String    where traceS = traceSLn
 
-instance TraceS [TCM Doc] where traceS k n = traceSDoc k n . fmap vcat . sequence
+instance TraceS [TCM' ctxty Doc] where
+  type TraceSConstraint [TCM' ctxty Doc] m = (DebugCtxTy m ~ ctxty) 
+  traceS k n = traceSDoc k n . fmap vcat . sequence
+
 instance TraceS [String]  where traceS k n = traceSLn  k n . unlines
 instance TraceS [Doc]     where traceS k n = traceSLn  k n . render . vcat
 instance TraceS Doc       where traceS k n = traceSLn  k n . render
@@ -238,7 +268,7 @@ traceSLn :: MonadDebug m => VerboseKey -> VerboseLevel -> String -> m a -> m a
 traceSLn k n s = applyWhenVerboseS k n $ traceDebugMessage k n $ s ++ "\n"
 
 -- | Conditionally render debug 'Doc', print it, and then continue.
-traceSDoc :: MonadDebug m => VerboseKey -> VerboseLevel -> TCM Doc -> m a -> m a
+traceSDoc :: MonadDebug m => VerboseKey -> VerboseLevel -> TCM' (DebugCtxTy m) Doc -> m a -> m a
 traceSDoc k n d = applyWhenVerboseS k n $ \cont -> do
   s <- formatDebugMessage k n $ locallyTC eIsDebugPrinting (const True) d
   traceDebugMessage k n (s ++ "\n") cont
