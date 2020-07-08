@@ -286,12 +286,13 @@ mkDomainFree = DomainFree Nothing
 --   Duplicating @A@ could not be done naively, we would have to make sure
 --   that the metas of the copy are aliases of the metas of the original.
 
-data TypedBinding
-  = TBind Range TacticAttr (List1 (NamedArg Binder)) Expr
+data TypedBinding' e
+  = TBind Range TacticAttr (List1 (NamedArg Binder)) e
     -- ^ As in telescope @(x y z : A)@ or type @(x y z : A) -> B@.
   | TLet Range (List1 LetBinding)
     -- ^ E.g. @(let x = e)@ or @(let open M)@.
   deriving (Data, Show, Eq)
+type TypedBinding = TypedBinding' Expr
 
 mkTBind :: Range -> List1 (NamedArg Binder) -> Expr -> TypedBinding
 mkTBind r = TBind r Nothing
@@ -302,6 +303,7 @@ mkTLet r (d:ds) = Just $ TLet r (d :| ds)
 
 type Telescope1 = List1 TypedBinding
 type Telescope  = [TypedBinding]
+type Telescope' e = [TypedBinding' e]
 
 mkPi :: ExprInfo -> Telescope -> Expr -> Expr
 mkPi i []     e = e

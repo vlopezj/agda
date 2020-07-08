@@ -1,13 +1,16 @@
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies               #-} -- for type equality ~
+{-# LANGUAGE GADTs                      #-} -- for type equality ~
 {-# LANGUAGE ViewPatterns               #-}
 
 module Agda.TypeChecking.Monad.Base where
 
 import Prelude hiding (null)
 import GHC.Stack ( freezeCallStack, callStack, HasCallStack )
+import qualified GHC.TypeLits as Hs
 
 import Control.Applicative hiding (empty)
 import qualified Control.Concurrent as C
@@ -88,6 +91,7 @@ import Agda.Interaction.Highlighting.Precise
 import Agda.Interaction.Library
 
 import Agda.Utils.Benchmark (MonadBench(..))
+import Agda.Utils.Dependent
 import Agda.Utils.FileName
 import Agda.Utils.Functor
 import Agda.Utils.Hash
@@ -103,6 +107,7 @@ import Agda.Utils.Null
 import Agda.Utils.Permutation
 import Agda.Utils.Pretty
 import Agda.Utils.Singleton
+import Agda.Utils.Size (Sized(size))
 import Agda.Utils.SmallSet (SmallSet)
 import qualified Agda.Utils.SmallSet as SmallSet
 import Agda.Utils.Update
@@ -1018,14 +1023,14 @@ instance HasRange ProblemConstraint where
   getRange = getRange . theConstraint
 
 data TwinT'' b a  =
-    SingleT a
-  | TwinT { twinPid    :: [ProblemId]  -- ^ Unification problem which is sufficient
-                                       --   for LHS and RHS to be equal
-          , necessary  :: b            -- ^ Whether solving twinPid is necessary,
-                                       --   not only sufficient.
-          , twinLHS    :: a            -- ^ Left hand side of the twin
-          , twinRHS    :: a            -- ^ Right hand side of the twin
-          , twinCompat :: a            -- ^ A term which can be used instead of the
+    SingleT { unSingleT :: Het 'Both a }
+  | TwinT { twinPid    :: [ProblemId]      -- ^ Unification problem which is sufficient
+                                           --   for LHS and RHS to be equal
+          , necessary  :: b                -- ^ Whether solving twinPid is necessary,
+                                           --   not only sufficient.
+          , twinLHS    :: Het 'LHS a       -- ^ Left hand side of the twin
+          , twinRHS    :: Het 'RHS a       -- ^ Right hand side of the twin
+          , twinCompat :: Het 'Compat a    -- ^ A term which can be used instead of the
                                       --   twin for backwards compatibility
                                       --   purposes.
           }
@@ -1033,17 +1038,34 @@ data TwinT'' b a  =
 
 type TwinT' = TwinT'' Bool
 
-unsafeSingleT :: TwinT'' b a -> a
-unsafeSingleT (SingleT s) = s
-unsafeSingleT (TwinT{twinCompat=s}) = s
+data WithHet a = WithHet ContextHet a
 
-pattern UnsafeSingleT :: a -> TwinT'' b a
-pattern UnsafeSingleT s <- (unsafeSingleT -> s)
+type family HetSideIsType (s :: HetSide) :: Bool where
+  HetSideIsType 'LHS    = 'True
+  HetSideIsType 'RHS    = 'True
+  HetSideIsType 'Compat = 'True
+  HetSideIsType 'Both   = 'True
+  HetSideIsType 'Whole  = 'False
+{-# INLINE twinAt #-}
+twinAt :: forall s. (Sing s, HetSideIsType s ~ 'True) => TwinT -> Type
+twinAt (SingleT a) = unHet @'Both a
+twinAt TwinT{twinLHS,twinRHS,twinCompat} = case (sing :: SingT s) of
+  SLHS    -> unHet @s $ twinLHS
+  SBoth   -> unHet @'LHS $ twinLHS
+  SRHS    -> unHet @s $ twinRHS
+  SCompat -> unHet @s $ twinCompat
+
+unTwinTCompat :: TwinT'' b a -> a
+unTwinTCompat (SingleT s) = unHet @'Both s
+unTwinTCompat (TwinT{twinCompat=s}) = unHet @'Compat s
+
+pattern TwinTCompat :: a -> TwinT'' b a
+pattern TwinTCompat s <- (unTwinTCompat -> s)
   where
-    UnsafeSingleT s = SingleT s
+    TwinTCompat s = SingleT (Het @'Both s)
 
 #if __GLASGOW_HASKELL__ >= 802
-{-# COMPLETE UnsafeSingleT #-}
+{-# COMPLETE TwinTCompat #-}
 #endif
 
 -- We do not derive Traverse because we want to be careful when handling the "necessary" bit
@@ -1078,10 +1100,57 @@ instance Pretty a => Pretty (TwinT' a) where
              <> "]"
              <> pretty b
 
+data HetSide = LHS | RHS | Compat | Whole | Both
+data instance SingT (a :: HetSide) where
+  SLHS    :: SingT 'LHS
+  SRHS    :: SingT 'RHS
+  SCompat :: SingT 'Compat
+  SWhole  :: SingT 'Whole
+  SBoth   :: SingT 'Both
+instance Sing 'LHS    where sing = SLHS
+instance Sing 'RHS    where sing = SRHS
+instance Sing 'Both   where sing = SBoth
+instance Sing 'Compat where sing = SCompat
+instance Sing 'Whole  where sing = SWhole
+
+newtype Het (side :: HetSide) t = Het { unHet :: t }
+  deriving (Data, Show, Functor, Foldable, Traversable, Pretty)
+instance Applicative (Het s) where
+  pure = Het
+  mf <*> ma = mf >>= (\f -> ma >>= (\a -> pure (f a)))
+instance Monad (Het s) where
+  Het a >>= f = f a
+
+instance TermLike t => TermLike (Het a t) where
+
+-- | The context is in left-to-right order
+newtype ContextHet = ContextHet { unContextHet :: [(Name, Dom TwinT)] }
+  deriving (Data, Show)
+
+twinContextAt :: forall s. (Sing s, HetSideIsType s ~ 'True) => ContextHet -> [(Name, Dom Type)]
+twinContextAt = fmap (fmap (fmap (twinAt @s))) . unContextHet
+
+instance TermLike ContextHet where
+  foldTerm f = go . unContextHet
+    where
+      go [] = mempty
+      go ((_,v):vs) = foldTerm f (v, ContextHet vs)
+  traverseTermM = __IMPOSSIBLE__
+
+instance Free ContextHet where
+  freeVars' = go . unContextHet
+    where
+      go []         = mempty
+      go ((_,v):vs) = freeVars' v <> underBinder (freeVars' (ContextHet vs))
+
+instance Sized ContextHet where
+  size = length . unContextHet
+
 data Constraint
   = ValueCmp Comparison CompareAs Term Term
+  | ValueCmpHet Comparison ContextHet (Het 'Whole CompareAsHet) (Het 'LHS Term) (Het 'RHS Term)
   | ValueCmpOnFace Comparison Term Type Term Term
-  | ElimCmp [Polarity] [IsForced] TwinT Term [Elim] [Elim]
+  | ElimCmp [Polarity] [IsForced] Type Term [Elim] [Elim]
   | TelCmp Type Type Comparison Telescope Telescope -- ^ the two types are for the error message only
   | SortCmp Comparison Sort Sort
   | LevelCmp Comparison Level Level
@@ -1123,6 +1192,9 @@ instance Free Constraint where
   freeVars' c =
     case c of
       ValueCmp _ t u v      -> freeVars' (t, (u, v))
+      ValueCmpHet _ tel t u v      -> freeVars' tel <>
+                                      underBinder' (size tel)
+                                        (freeVars' (unHet @'Whole t, (unHet @'LHS u, unHet @'RHS v)))
       ValueCmpOnFace _ p t u v -> freeVars' (p, (t, (u, v)))
       ElimCmp _ _ t u es es'  -> freeVars' ((t, u), (es, es'))
       TelCmp _ _ _ tel tel' -> freeVars' (tel, tel')
@@ -1142,6 +1214,7 @@ instance Free Constraint where
 instance TermLike Constraint where
   foldTerm f = \case
       ValueCmp _ t u v       -> foldTerm f (t, u, v)
+      ValueCmpHet _ tel t u v  -> foldTerm f (tel, t, u, v)
       ValueCmpOnFace _ p t u v -> foldTerm f (p, t, u, v)
       ElimCmp _ _ t u es es' -> foldTerm f (t, u, es, es')
       LevelCmp _ l l'        -> foldTerm f (Level l, Level l')
@@ -1198,34 +1271,22 @@ dirToCmp cont DirGeq = flip $ cont CmpLeq
 
 -- | We can either compare two terms at a given type, or compare two
 --   types without knowing (or caring about) their sorts.
-data CompareAs
-  = AsTermsOfType Type  -- ^ @Type@ should not be @Size@.
-                        --   But currently, we do not rely on this invariant.
-  | AsTermsOfTwin TwinT -- ^ None of the components of @TwinT@ should be @Size@.
+data CompareAs' t
+  = AsTermsOf t  -- ^ @Type@ should not be @Size@.
                         --   But currently, we do not rely on this invariant.
   | AsSizes             -- ^ Replaces @AsTermsOf Size@.
   | AsTypes
-  deriving (Data, Show)
+  deriving (Data, Show, Functor, Foldable, Traversable)
 
-viewCompareAs_AsTermsOf :: CompareAs -> Maybe Type
-viewCompareAs_AsTermsOf (AsTermsOfType s) = Just s
-viewCompareAs_AsTermsOf (AsTermsOfTwin (unsafeSingleT -> s)) = Just s
-viewCompareAs_AsTermsOf _ = Nothing
-pattern AsTermsOf :: Type -> CompareAs
-pattern AsTermsOf s <- (viewCompareAs_AsTermsOf -> Just s)
-  where
-    AsTermsOf s = AsTermsOfType s
+type CompareAs = CompareAs' Type
+type CompareAsHet = CompareAs' TwinT
 
-#if __GLASGOW_HASKELL__ >= 802
-{-# COMPLETE AsTermsOf, AsSizes, AsTypes #-}
-#endif
-
-instance Free CompareAs where
+instance Free a => Free (CompareAs' a) where
   freeVars' (AsTermsOf a) = freeVars' a
   freeVars' AsSizes       = mempty
   freeVars' AsTypes       = mempty
 
-instance TermLike CompareAs where
+instance TermLike a => TermLike (CompareAs' a) where
   foldTerm f (AsTermsOf a) = foldTerm f a
   foldTerm f AsSizes       = mempty
   foldTerm f AsTypes       = mempty

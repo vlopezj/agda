@@ -280,7 +280,8 @@ data Tele a = EmptyTel
             | ExtendTel a (Abs (Tele a))  -- ^ 'Abs' is never 'NoAbs'.
   deriving (Data, Show, Functor, Foldable, Traversable)
 
-type Telescope = Tele (Dom Type)
+type Telescope' a = Tele (Dom a)
+type Telescope = Telescope' Type
 
 -- | Sorts.
 --
@@ -988,16 +989,17 @@ replaceEmptyName :: ArgName -> Tele a -> Tele a
 replaceEmptyName x = mapAbsNames $ \ y -> if null y then x else y
 
 -- | Telescope as list.
+type ListTel'' a b = [Dom (a, b)]
 type ListTel' a = [Dom (a, Type)]
 type ListTel = ListTel' ArgName
 
-telFromList' :: (a -> ArgName) -> ListTel' a -> Telescope
+telFromList' :: (a -> ArgName) -> ListTel'' a b -> Tele (Dom b)
 telFromList' f = List.foldr extTel EmptyTel
   where
     extTel dom@Dom{unDom = (x, a)} = ExtendTel (dom{unDom = a}) . Abs (f x)
 
 -- | Convert a list telescope to a telescope.
-telFromList :: ListTel -> Telescope
+telFromList :: [Dom (ArgName,t)] -> Tele (Dom t)
 telFromList = telFromList' id
 
 -- | Convert a telescope to its list form.

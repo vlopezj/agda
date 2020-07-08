@@ -1,4 +1,6 @@
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns         #-}
 
 module Agda.TypeChecking.Pretty
     ( module Agda.TypeChecking.Pretty
@@ -46,6 +48,7 @@ import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Positivity.Occurrence
 import Agda.TypeChecking.Substitute
 
+import Agda.Utils.Dependent
 import Agda.Utils.Graph.AdjacencyMap.Unidirectional (Graph)
 import qualified Agda.Utils.Graph.AdjacencyMap.Unidirectional as Graph
 import Agda.Utils.List1 ( List1, pattern (:|) )
@@ -294,9 +297,27 @@ instance PrettyTCM ProblemConstraint where
       prPids [pid] = parens $ "problem" <+> prettyTCM pid
       prPids pids  = parens $ "problems" <+> fsep (punctuate "," $ map prettyTCM pids)
 
+instance (PrettyTCM a, Sing s, HetSideIsType s ~ 'True) => PrettyTCM (WithHet (Het s a)) where
+  prettyTCM (WithHet tel a) = fmap (unHet @s) $ underHet @s tel prettyTCM a
+
+instance PrettyTCM ContextHet where
+  prettyTCM :: forall m. MonadPretty m => ContextHet -> m Doc
+  prettyTCM = fmap P.fsep . sequence . go [] . unContextHet
+    where
+      go :: [(Name, Dom TwinT)] -> [(Name, Dom TwinT)] -> [m Doc]
+      go env [] = []
+      go env (a@(n,v):as) = (pure (P.pretty n) <+> ":" <+>
+                               prettyTCM (WithHet (ContextHet env) v)
+                             ):go (env ++ [a]) as
+
 instance PrettyTCM Constraint where
     prettyTCM c = case c of
         ValueCmp cmp ty s t -> prettyCmp (prettyTCM cmp) s t <?> prettyTCM ty
+        ValueCmpHet cmp tel ty s t ->
+          sep [ prettyTCM tel <+> "⊢"
+              , prettyCmp (prettyTCM cmp) (WithHet tel s) (WithHet tel t) <?>
+                prettyTCM (WithHet tel (unHet @'Whole ty))
+              ]
         ValueCmpOnFace cmp p ty s t ->
             sep [ prettyTCM p <+> "|"
                 , prettyCmp (prettyTCM cmp) s t ]
@@ -372,23 +393,39 @@ instance PrettyTCM Constraint where
           => m Doc -> a -> b -> m Doc
         prettyCmp cmp x y = prettyTCMCtx TopCtx x <?> (cmp <+> prettyTCMCtx TopCtx y)
 
-instance PrettyTCM TwinT where
-  prettyTCM (SingleT a) = prettyTCM a
-  prettyTCM (TwinT{twinPid,necessary,twinLHS=a,twinRHS=b,twinCompat=c}) =
-    prettyTCM a <+> return "‡"
+
+instance PrettyTCM a => PrettyTCM (WithHet (TwinT' a)) where
+  prettyTCM (WithHet tel (SingleT a)) = prettyTCM (WithHet tel a)
+  prettyTCM (WithHet tel (TwinT{twinPid,necessary,twinLHS=a,twinRHS=b,twinCompat=c})) =
+    prettyTCM (WithHet tel a) <+> return "‡"
                 <+> return "["
                 <+> pretty twinPid
                 <+> return (if necessary then "" else "*")
                 <+> return ","
-                <+> prettyTCM c
+                <+> prettyTCM (WithHet tel c)
                 <+> return "]"
-                <+> prettyTCM b
+                <+> prettyTCM (WithHet tel b)
 
-instance PrettyTCM CompareAs where
-  prettyTCM (AsTermsOfType a) = ":" <+> prettyTCMCtx TopCtx a
-  prettyTCM (AsTermsOfTwin a) = ":" <+> prettyTCMCtx TopCtx a
-  prettyTCM AsSizes           = ":" <+> do prettyTCM =<< sizeType
-  prettyTCM AsTypes           = empty
+commuteDomTwin :: Dom (TwinT' a) -> TwinT' (Dom a)
+commuteDomTwin dt = case unDom dt of
+  SingleT{} -> SingleT$ sequence$ fmap unSingleT dt
+  TwinT{twinPid,necessary} ->
+    TwinT{twinPid,necessary
+         ,twinLHS=sequence $ fmap twinLHS dt
+         ,twinRHS=sequence $ fmap twinRHS dt
+         ,twinCompat=sequence $ fmap twinCompat dt
+         }
+
+instance PrettyTCM (WithHet (Dom TwinT)) where
+  prettyTCM (WithHet tel a) = prettyTCM$ WithHet tel (commuteDomTwin a)
+
+instance PrettyTCM (WithHet a) => PrettyTCM (WithHet (CompareAs' a)) where
+  prettyTCM (WithHet tel a) = prettyTCM$ fmap (WithHet tel) a
+
+instance PrettyTCM a => PrettyTCM (CompareAs' a) where
+  prettyTCM (AsTermsOf a) = ":" <+> prettyTCMCtx TopCtx a
+  prettyTCM AsSizes       = ":" <+> do prettyTCM =<< sizeType
+  prettyTCM AsTypes       = empty
 
 instance PrettyTCM TypeCheckingProblem where
   prettyTCM (CheckExpr cmp e a) =
@@ -458,16 +495,17 @@ instance PrettyTCM a => PrettyTCM (Pattern' a) where
       where
         -- NONE OF THESE BINDINGS IS USED AT THE MOMENT:
         b = conPRecord i && patOrigin (conPInfo i) /= PatOCon
-        showRec :: MonadPretty m => m Doc -- Defined, but currently not used
+        showRec :: forall m. MonadPretty m => m Doc -- Defined, but currently not used
         showRec = sep
           [ "record"
           , bracesAndSemicolons <$> zipWithM showField (conFields c) ps
           ]
-        showField :: MonadPretty m => Arg QName -> NamedArg (Pattern' a) -> m Doc -- NB:: Defined but not used
+        showField :: forall m. MonadPretty m => Arg QName -> NamedArg (Pattern' a) -> m Doc -- NB:: Defined but not used
         showField (Arg ai x) p =
           sep [ prettyTCM (A.qnameName x) <+> "=" , nest 2 $ prettyTCM $ namedArg p ]
-        showCon :: MonadPretty m => m Doc -- NB:: Defined but not used
+        showCon :: forall m. MonadPretty m => m Doc -- NB:: Defined but not used
         showCon = parens $ prTy $ prettyTCM c <+> fsep (map (prettyTCM . namedArg) ps)
+        prTy :: forall m. MonadPretty m => m Doc -> m Doc
         prTy d = caseMaybe (conPType i) d $ \ t -> d  <+> ":" <+> prettyTCM t
   prettyTCM (LitP _ l)    = text (P.prettyShow l)
   prettyTCM (ProjP _ q)   = text ("." ++ P.prettyShow q)

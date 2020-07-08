@@ -1,5 +1,6 @@
 {-# LANGUAGE UndecidableInstances  #-}
 {-# LANGUAGE NondecreasingIndentation #-}
+{-# LANGUAGE TypeFamilies #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -39,7 +40,7 @@ import qualified Agda.Syntax.Info as Info
 import Agda.Syntax.Internal as I
 import Agda.Syntax.Literal
 import Agda.Syntax.Translation.InternalToAbstract
-import Agda.Syntax.Translation.AbstractToConcrete
+import Agda.Syntax.Translation.AbstractToConcrete as AtoC
 import Agda.Syntax.Translation.ConcreteToAbstract
 import Agda.Syntax.Scope.Base
 import Agda.Syntax.Scope.Monad
@@ -75,6 +76,7 @@ import Agda.TypeChecking.Warnings
 
 import Agda.Termination.TermCheck (termMutual)
 
+import Agda.Utils.Dependent
 import Agda.Utils.Functor
 import Agda.Utils.Lens
 import Agda.Utils.List
@@ -359,17 +361,19 @@ showComputed _ e = prettyATop e
 
 -- | Modifier for interactive commands,
 --   specifying whether safety checks should be ignored.
-outputFormId :: OutputForm a b -> b
+outputFormId :: OutputForm name a b -> b
 outputFormId (OutputForm _ _ o) = out o
   where
     out o = case o of
       OfType i _                 -> i
       CmpInType _ _ i _          -> i
+      CmpInTypeHet _ _ _ i _     -> unHet @'M.LHS i
       CmpElim _ _ (i:_) _        -> i
       CmpElim _ _ [] _           -> __IMPOSSIBLE__
       JustType i                 -> i
       CmpLevels _ i _            -> i
       CmpTypes _ i _             -> i
+      CmpTypesHet _ _ i _        -> unHet @'M.LHS i
       CmpTeles _ i _             -> i
       JustSort i                 -> i
       CmpSorts _ i _             -> i
@@ -383,7 +387,7 @@ outputFormId (OutputForm _ _ o) = out o
       PTSInstance i _            -> i
       PostponedCheckFunDef{}     -> __IMPOSSIBLE__
 
-instance Reify ProblemConstraint (Closure (OutputForm Expr Expr)) where
+instance Reify ProblemConstraint (Closure (OutputForm A.Name Expr Expr)) where
   reify (PConstr pids cl) = withClosure cl $ \ c ->
     OutputForm (getRange c) (Set.toList pids) <$> reify c
 
@@ -396,10 +400,33 @@ reifyElimToExpr e = case e of
     appl :: Text -> Arg Expr -> Expr
     appl s v = A.App defaultAppInfo_ (A.Lit empty (LitString s)) $ fmap unnamed v
 
-instance Reify Constraint (OutputConstraint Expr Expr) where
+instance (Reify i a, Sing s, HetSideIsType s ~ 'True) => Reify (WithHet (Het s i)) (Het s a) where
+    reify (WithHet tel a) = underHet @s tel reify a
+
+instance Reify i a => Reify (WithHet (TwinT' i)) (TwinT' a) where
+  reify (WithHet tel (SingleT a)) = SingleT <$> reify (WithHet tel a)
+  reify (WithHet tel (TwinT{twinPid,necessary,twinLHS=a,twinRHS=b,twinCompat=c})) = do
+    (a',b',c') <- reify (WithHet tel a, WithHet tel b, WithHet tel c)
+    return$ TwinT{twinPid,necessary,twinLHS=a',twinRHS=b',twinCompat=c'}
+
+instance Reify ContextHet (OutputContextHet A.Name A.Expr) where
+  reify = sequence . go [] . unContextHet
+    where
+      go env [] = []
+      go env (a@(name,v):as) = ((name,) <$> reify (fmap
+                                    (WithHet (ContextHet env)) v)):go (env ++ [a]) as
+
+instance Reify Constraint (OutputConstraint A.Name Expr Expr) where
     reify (ValueCmp cmp (AsTermsOf t) u v) = CmpInType cmp <$> reify t <*> reify u <*> reify v
     reify (ValueCmp cmp AsSizes u v) = CmpInType cmp <$> (reify =<< sizeType) <*> reify u <*> reify v
     reify (ValueCmp cmp AsTypes u v) = CmpTypes cmp <$> reify u <*> reify v
+    reify (ValueCmpHet cmp tel t u v) =
+      case unHet @'Whole t of
+        AsTermsOf t -> CmpInTypeHet cmp <$> reify tel <*> reify (WithHet tel t) <*> reify (WithHet tel u) <*> reify (WithHet tel v)
+        AsSizes     -> CmpInTypeHet cmp <$> reify tel <*> (fmap (SingleT) $
+                                                             (underHet @'Both tel (\() -> sizeType >>= reify) (Het @'Both ()))) <*>
+                                                             reify (WithHet tel u) <*> reify (WithHet tel v)
+        AsTypes     -> CmpTypesHet cmp <$> reify tel <*> reify (WithHet tel u) <*> reify (WithHet tel v)
     reify (ValueCmpOnFace cmp p t u v) = CmpInType cmp <$> (reify =<< ty) <*> reify (lam_o u) <*> reify (lam_o v)
       where
         lam_o = I.Lam (setRelevance Irrelevant defaultArgInfo) . NoAbs "_"
@@ -407,7 +434,7 @@ instance Reify Constraint (OutputConstraint Expr Expr) where
           p <- open p
           t <- open t
           pPi' "o" p (\ o -> t)
-    reify (ElimCmp cmp _ (UnsafeSingleT t) v es1 es2) =
+    reify (ElimCmp cmp _ t v es1 es2) =
       CmpElim cmp <$> reify t <*> mapM reifyElimToExpr es1
                               <*> mapM reifyElimToExpr es2
     reify (LevelCmp cmp t t')    = CmpLevels cmp <$> reify t <*> reify t'
@@ -467,7 +494,7 @@ instance Reify Constraint (OutputConstraint Expr Expr) where
       OfType <$> reify (MetaV m []) <*> reify t
 
 
-instance (Pretty a, Pretty b) => Pretty (OutputForm a b) where
+instance (Pretty name, Pretty a, Pretty b) => Pretty (OutputForm name a b) where
   pretty (OutputForm r pids c) = sep [pretty c, nest 2 $ prange r, nest 2 $ prPids pids]
     where
       prPids []    = empty
@@ -477,15 +504,17 @@ instance (Pretty a, Pretty b) => Pretty (OutputForm a b) where
                | otherwise = text $ " [ at " ++ s ++ " ]"
         where s = prettyShow r
 
-instance (Pretty a, Pretty b) => Pretty (OutputConstraint a b) where
+instance (Pretty name, Pretty a, Pretty b) => Pretty (OutputConstraint name a b) where
   pretty oc =
     case oc of
       OfType e t           -> pretty e .: t
       JustType e           -> "Type" <+> pretty e
       JustSort e           -> "Sort" <+> pretty e
       CmpInType cmp t e e' -> pcmp cmp e e' .: t
+      CmpInTypeHet cmp tel t e e' -> pctx tel <+> "⊢" <+> pcmp cmp e e' .: t
       CmpElim cmp t e e'   -> pcmp cmp e e' .: t
       CmpTypes  cmp t t'   -> pcmp cmp t t'
+      CmpTypesHet cmp tel t t' -> pctx tel <+> "⊢" <+> pcmp cmp t t'
       CmpLevels cmp t t'   -> pcmp cmp t t'
       CmpTeles  cmp t t'   -> pcmp cmp t t'
       CmpSorts cmp s s'    -> pcmp cmp s s'
@@ -507,24 +536,46 @@ instance (Pretty a, Pretty b) => Pretty (OutputConstraint a b) where
       bin a op b = sep [a, nest 2 $ op <+> b]
       pcmp cmp a b = bin (pretty a) (pretty cmp) (pretty b)
       val .: ty = bin val ":" (pretty ty)
+      pctx a = fsep (punctuate "," $ map (\(name, v) ->
+                                            bin (pretty name) ":" (pretty v)) a)
 
-
-instance (ToConcrete a c, ToConcrete b d) =>
-         ToConcrete (OutputForm a b) (OutputForm c d) where
+instance (name ~ A.Name, name' ~ C.Name, ToConcrete a c, ToConcrete b d) =>
+         ToConcrete (OutputForm name a b) (OutputForm name' c d) where
     toConcrete (OutputForm r pid c) = OutputForm r pid <$> toConcrete c
 
-instance (ToConcrete a c, ToConcrete b d) =>
-         ToConcrete (OutputConstraint a b) (OutputConstraint c d) where
+toConcreteContextHet :: (ToConcrete a c) =>
+                           OutputContextHet A.Name a ->
+                          (OutputContextHet C.Name c -> AbsToCon r) ->
+                             AbsToCon r
+toConcreteContextHet [] κ = κ []
+toConcreteContextHet ((name,v):vs) κ =
+  AtoC.bindName name $ \name' -> do
+    v' <- toConcrete v
+    toConcreteContextHet vs $ \ctx' ->
+      κ ((name',v'):ctx')
+
+instance (name ~ A.Name, name' ~ C.Name,
+         ToConcrete a c, ToConcrete b d) =>
+         ToConcrete (OutputConstraint name a b) (OutputConstraint name' c d) where
     toConcrete (OfType e t) = OfType <$> toConcrete e <*> toConcreteCtx TopCtx t
     toConcrete (JustType e) = JustType <$> toConcrete e
     toConcrete (JustSort e) = JustSort <$> toConcrete e
     toConcrete (CmpInType cmp t e e') =
       CmpInType cmp <$> toConcreteCtx TopCtx t <*> toConcreteCtx TopCtx e
                                                <*> toConcreteCtx TopCtx e'
+    toConcrete (CmpInTypeHet cmp ctx t e e') = do
+      toConcreteContextHet ctx $ \ctx' ->
+        CmpInTypeHet cmp ctx' <$> toConcreteCtx TopCtx t
+                              <*> traverse @(Het 'M.LHS) (toConcreteCtx TopCtx) e
+                              <*> traverse @(Het 'M.RHS) (toConcreteCtx TopCtx) e'
     toConcrete (CmpElim cmp t e e') =
       CmpElim cmp <$> toConcreteCtx TopCtx t <*> toConcreteCtx TopCtx e <*> toConcreteCtx TopCtx e'
     toConcrete (CmpTypes cmp e e') = CmpTypes cmp <$> toConcreteCtx TopCtx e
                                                   <*> toConcreteCtx TopCtx e'
+    toConcrete (CmpTypesHet cmp ctx e e') =
+      toConcreteContextHet ctx $ \ctx' -> CmpTypesHet cmp ctx' <$>
+                traverse @(Het 'M.LHS) (toConcreteCtx TopCtx) e
+            <*> traverse @(Het 'M.RHS) (toConcreteCtx TopCtx) e'
     toConcrete (CmpLevels cmp e e') = CmpLevels cmp <$> toConcreteCtx TopCtx e
                                                     <*> toConcreteCtx TopCtx e'
     toConcrete (CmpTeles cmp e e') = CmpTeles cmp <$> toConcrete e <*> toConcrete e'
@@ -566,23 +617,23 @@ instance Pretty c => Pretty (IPBoundary' c) where
               NotOverapplied -> mempty
     prettyList_ xs <+> "⊢" <+> pretty val <+> rhs
 
-prettyConstraints :: [Closure Constraint] -> TCM [OutputForm C.Expr C.Expr]
+prettyConstraints :: [Closure Constraint] -> TCM [OutputForm C.Name C.Expr C.Expr]
 prettyConstraints cs = do
   forM cs $ \ c -> do
             cl <- reify (PConstr Set.empty c)
             enterClosure cl abstractToConcrete_
 
-getConstraints :: TCM [OutputForm C.Expr C.Expr]
+getConstraints :: TCM [OutputForm C.Name C.Expr C.Expr]
 getConstraints = getConstraints' return $ const True
 
-namedMetaOf :: OutputConstraint A.Expr a -> a
+namedMetaOf :: OutputConstraint A.Name A.Expr a -> a
 namedMetaOf (OfType i _) = i
 namedMetaOf (JustType i) = i
 namedMetaOf (JustSort i) = i
 namedMetaOf (Assign i _) = i
 namedMetaOf _ = __IMPOSSIBLE__
 
-getConstraintsMentioning :: Rewrite -> MetaId -> TCM [OutputForm C.Expr C.Expr]
+getConstraintsMentioning :: Rewrite -> MetaId -> TCM [OutputForm C.Name C.Expr C.Expr]
 getConstraintsMentioning norm m = getConstrs instantiateBlockingFull (mentionsMeta m)
   -- could be optimized by not doing a full instantiation up front, with a more clever mentionsMeta.
   where
@@ -597,6 +648,8 @@ getConstraintsMentioning norm m = getConstrs instantiateBlockingFull (mentionsMe
     hasHeadMeta c =
       case c of
         ValueCmp _ _ u v           -> isMeta u `mplus` isMeta v
+        ValueCmpHet _ _ _ u v      -> isMeta (unHet @'M.LHS u) `mplus`
+                                      isMeta (unHet @'M.RHS v)
         ValueCmpOnFace cmp p t u v -> isMeta u `mplus` isMeta v
         -- TODO: extend to other comparisons?
         ElimCmp cmp fs t v as bs   -> Nothing
@@ -643,7 +696,7 @@ stripConstraintPids cs = List.sortBy (compare `on` isBlocked) $ map stripPids cs
     blocking (Guarded c pid) = pid : blocking c
     blocking _               = []
 
-getConstraints' :: (ProblemConstraint -> TCM ProblemConstraint) -> (ProblemConstraint -> Bool) -> TCM [OutputForm C.Expr C.Expr]
+getConstraints' :: (ProblemConstraint -> TCM ProblemConstraint) -> (ProblemConstraint -> Bool) -> TCM [OutputForm C.Name C.Expr C.Expr]
 getConstraints' g f = liftTCM $ do
     cs <- stripConstraintPids . filter f <$> (mapM g =<< M.getAllConstraints)
     cs <- forM cs $ \c -> do
@@ -656,7 +709,7 @@ getConstraints' g f = liftTCM $ do
       mv <- getMetaInfo <$> lookupMeta mi
       withMetaInfo mv $ do
         let m = QuestionMark emptyMetaInfo{ metaNumber = Just $ fromIntegral ii } ii
-        abstractToConcrete_ $ OutputForm noRange [] $ Assign m e
+        abstractToConcrete_ $ OutputForm @A.Name noRange [] $ Assign m e
 
 
 getIPBoundary :: Rewrite -> InteractionId -> TCM [IPBoundary' C.Expr]
@@ -694,7 +747,7 @@ showGoals (ims, hms) = do
   dh <- mapM showA' hms
   return $ unlines $ map show di ++ dh
   where
-    showA' :: OutputConstraint A.Expr NamedMeta -> TCM String
+    showA' :: OutputConstraint Name A.Expr NamedMeta -> TCM String
     showA' m = do
       let i = nmid $ namedMetaOf m
       r <- getMetaRange i
@@ -746,14 +799,14 @@ getSolvedInteractionPoints all norm = concat <$> do
           BlockedConst{}                 -> unsol
           PostponedTypeCheckingProblem{} -> unsol
 
-typeOfMetaMI :: Rewrite -> MetaId -> TCM (OutputConstraint Expr NamedMeta)
+typeOfMetaMI :: Rewrite -> MetaId -> TCM (OutputConstraint Name Expr NamedMeta)
 typeOfMetaMI norm mi =
      do mv <- lookupMeta mi
         withMetaInfo (getMetaInfo mv) $
           rewriteJudg mv (mvJudgement mv)
    where
     rewriteJudg :: MetaVariable -> Judgement MetaId ->
-                   TCM (OutputConstraint Expr NamedMeta)
+                   TCM (OutputConstraint Name Expr NamedMeta)
     rewriteJudg mv (HasType i cmp t) = do
       ms <- getMetaNameSuggestion i
       -- Andreas, 2019-03-17, issue #3638:
@@ -780,17 +833,17 @@ typeOfMetaMI norm mi =
       return $ JustSort $ NamedMeta ms i
 
 
-typeOfMeta :: Rewrite -> InteractionId -> TCM (OutputConstraint Expr InteractionId)
+typeOfMeta :: Rewrite -> InteractionId -> TCM (OutputConstraint Name Expr InteractionId)
 typeOfMeta norm ii = typeOfMeta' norm . (ii,) =<< lookupInteractionId ii
 
-typeOfMeta' :: Rewrite -> (InteractionId, MetaId) -> TCM (OutputConstraint Expr InteractionId)
+typeOfMeta' :: Rewrite -> (InteractionId, MetaId) -> TCM (OutputConstraint Name Expr InteractionId)
 typeOfMeta' norm (ii, mi) = fmap (\_ -> ii) <$> typeOfMetaMI norm mi
 
-typesOfVisibleMetas :: Rewrite -> TCM [OutputConstraint Expr InteractionId]
+typesOfVisibleMetas :: Rewrite -> TCM [OutputConstraint Name Expr InteractionId]
 typesOfVisibleMetas norm =
   liftTCM $ mapM (typeOfMeta' norm) =<< getInteractionIdsAndMetas
 
-typesOfHiddenMetas :: Rewrite -> TCM [OutputConstraint Expr NamedMeta]
+typesOfHiddenMetas :: Rewrite -> TCM [OutputConstraint Name Expr NamedMeta]
 typesOfHiddenMetas norm = liftTCM $ do
   is    <- getInteractionMetas
   store <- IntMap.filterWithKey (openAndImplicit is . MetaId) <$> getMetaStore

@@ -180,6 +180,7 @@ addConstraintTo bucket c = do
       SortCmp{}        -> False
       LevelCmp{}       -> False
       ValueCmp{}       -> True
+      ValueCmpHet{}    -> True
       ValueCmpOnFace{} -> True
       ElimCmp{}        -> True
       TelCmp{}         -> True

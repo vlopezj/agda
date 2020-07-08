@@ -15,10 +15,10 @@ import qualified Data.Map                     as Map
 import           Data.Maybe                   (listToMaybe)
 
 import {-# SOURCE #-} Agda.TypeChecking.Monad.Base
-  (HighlightingLevel, HighlightingMethod, TCM, ProblemId, Comparison, Polarity, TwinT')
+  (HighlightingLevel, HighlightingMethod, TCM, ProblemId, Comparison, Polarity, TwinT', Het, HetSide(..))
 
 import           Agda.Syntax.Abstract         (QName)
-import           Agda.Syntax.Common           (InteractionId (..))
+import           Agda.Syntax.Common           (InteractionId (..), Arg)
 import           Agda.Syntax.Position
 import           Agda.Syntax.Scope.Base       (ScopeInfo)
 
@@ -433,17 +433,21 @@ data UseForce
   | WithoutForce  -- ^ Don't ignore any checks.
   deriving (Eq, Read, Show)
 
-data OutputForm a b = OutputForm Range [ProblemId] (OutputConstraint a b)
+data OutputForm c a b = OutputForm Range [ProblemId] (OutputConstraint c a b)
   deriving (Functor)
 
-data OutputConstraint a b
+type OutputContextHet c a = [(c, Arg (TwinT' a))]
+
+data OutputConstraint c a b
       = OfType b a | CmpInType Comparison a b b
                    | CmpElim [Polarity] a [b] [b]
+                   | CmpInTypeHet Comparison (OutputContextHet c a) (TwinT' a) (Het 'LHS b) (Het 'RHS b)
       | JustType b | CmpTypes Comparison b b
+                   | CmpTypesHet Comparison (OutputContextHet c a) (Het 'LHS b) (Het 'RHS b)
                    | CmpLevels Comparison b b
                    | CmpTeles Comparison b b
       | JustSort b | CmpSorts Comparison b b
-      | Guard (OutputConstraint a b) ProblemId
+      | Guard (OutputConstraint c a b) ProblemId
       | Assign b a | TypedAssign b a a | PostponedCheckArgs b [a] a a
       | IsEmptyType a
       | SizeLtSat a

@@ -88,7 +88,7 @@ data MakeCaseVariant = Function | ExtendedLambda
 
 data DisplayInfo
     = Info_CompilationOk WarningsAndNonFatalErrors
-    | Info_Constraints [OutputForm Expr Expr]
+    | Info_Constraints [OutputForm Name Expr Expr]
     | Info_AllGoalsWarnings Goals WarningsAndNonFatalErrors
     | Info_Time CPUTime
     | Info_Error Info_Error
@@ -111,13 +111,13 @@ data DisplayInfo
 data GoalDisplayInfo
     = Goal_HelperFunction (OutputConstraint' A.Expr A.Expr)
     | Goal_NormalForm ComputeMode A.Expr
-    | Goal_GoalType Rewrite GoalTypeAux [ResponseContextEntry] [IPBoundary' Expr] [OutputForm Expr Expr]
+    | Goal_GoalType Rewrite GoalTypeAux [ResponseContextEntry] [IPBoundary' Expr] [OutputForm Name Expr Expr]
     | Goal_CurrentGoal Rewrite
     | Goal_InferredType A.Expr
 
 -- | Goals & Warnings
-type Goals = ( [OutputConstraint A.Expr InteractionId] -- visible metas (goals)
-             , [OutputConstraint A.Expr NamedMeta]     -- hidden (unsolved) metas
+type Goals = ( [OutputConstraint A.Name A.Expr InteractionId] -- visible metas (goals)
+             , [OutputConstraint A.Name A.Expr NamedMeta]     -- hidden (unsolved) metas
              )
 
 -- | Errors that goes into Info_Error

@@ -55,8 +55,8 @@ instance IsSizeType a => IsSizeType (Type' a) where
 instance IsSizeType Term where
   isSizeType v = isSizeTypeTest <*> pure v
 
-instance IsSizeType TwinT where
-  isSizeType (UnsafeSingleT a) = isSizeType a
+--instance IsSizeType TwinT where
+--  isSizeType (UnsafeSingleT a) = isSizeType a
 
 instance IsSizeType CompareAs where
   isSizeType (AsTermsOf a) = isSizeType a

@@ -97,9 +97,13 @@ instance MentionsMeta a => MentionsMeta (Tele a) where
 instance MentionsMeta ProblemConstraint where
   mentionsMetas xs = mentionsMetas xs . theConstraint
 
+instance MentionsMeta a => MentionsMeta (Het s a) where
+  mentionsMetas xs = mentionsMetas xs . unHet
+
 instance MentionsMeta Constraint where
   mentionsMetas xs c = case c of
     ValueCmp _ t u v    -> mm (t, u, v)
+    ValueCmpHet _ tel t u v -> mm (tel, (t, u, v))
     ValueCmpOnFace _ p t u v    -> mm ((p,t), u, v)
     ElimCmp _ _ t v as bs -> mm ((t, v), (as, bs))
     LevelCmp _ u v      -> mm (u, v)
@@ -126,11 +130,14 @@ instance MentionsMeta TwinT where
   mentionsMetas xs (SingleT a) = mentionsMetas xs a
   mentionsMetas xs (TwinT{twinLHS,twinRHS,twinCompat}) = mentionsMetas xs (twinLHS, twinRHS, twinCompat)
 
-instance MentionsMeta CompareAs where
+instance MentionsMeta a => MentionsMeta (CompareAs' a) where
   mentionsMetas xs = \case
     AsTermsOf a -> mentionsMetas xs a
     AsSizes -> False
     AsTypes -> False
+
+instance MentionsMeta ContextHet where
+  mentionsMetas xs = mentionsMetas xs . fmap snd . unContextHet
 
 -- instance (Ord k, MentionsMeta e) => MentionsMeta (Map k e) where
 --   mentionsMeta = traverse mentionsMeta

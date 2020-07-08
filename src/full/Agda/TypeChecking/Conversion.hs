@@ -137,6 +137,14 @@ convError err = ifM ((==) Irrelevant <$> asksTC getRelevance) (return ()) $ type
 compareTerm :: forall m. MonadConversion m => Comparison -> Type -> Term -> Term -> m ()
 compareTerm cmp a u v = compareAs cmp (AsTermsOf a) u v
 
+compareAsHet :: forall m. MonadConversion m => Comparison -> ContextHet ->
+                Het 'Whole CompareAsHet -> Het 'LHS Term -> Het 'RHS Term -> m ()
+compareAsHet cmp tel a u v =
+  addContext (twinContextAt @'Compat tel) $
+    compareAs cmp (fmap unTwinTCompat $ unHet @'Whole $  a)
+                  (unHet @'LHS u)
+                  (unHet @'RHS v)
+
 -- | Type directed equality on terms or types.
 compareAs :: forall m. MonadConversion m => Comparison -> CompareAs -> Term -> Term -> m ()
   -- If one term is a meta, try to instantiate right away. This avoids unnecessary unfolding.
@@ -834,7 +842,7 @@ antiUnifyElims _ _ _ _ _ = patternViolation -- trigger maybeGiveUp in antiUnify
 compareElims :: forall m. MonadConversion m => [Polarity] -> [IsForced] -> Type -> Term -> [Elim] -> [Elim] -> m ()
 compareElims pols0 fors0 a v els01 els02 =
   verboseBracket "tc.conv.elim" 20 "compareElims" $
-  (catchConstraint (ElimCmp pols0 fors0 (SingleT a) v els01 els02) :: m () -> m ()) $ do
+  (catchConstraint (ElimCmp pols0 fors0 a v els01 els02) :: m () -> m ()) $ do
   let v1 = applyE v els01
       v2 = applyE v els02
       failure = typeError $ UnequalTerms CmpEq v1 v2 (AsTermsOf a)

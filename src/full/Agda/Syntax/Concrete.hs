@@ -258,6 +258,7 @@ data TypedBinding' e
 --   in later types.
 type Telescope1 = List1 TypedBinding
 type Telescope  = [TypedBinding]
+type Telescope' e = [TypedBinding' e]
 
 -- | We can try to get a @Telescope@ from a @[LamBinding]@.
 --   If we have a type annotation already, we're happy.

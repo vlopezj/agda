@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 module Agda.Interaction.JSONTop
     ( jsonREPL
     ) where
@@ -10,7 +12,7 @@ import qualified Data.Text as T
 
 import Agda.Interaction.AgdaTop
 import Agda.Interaction.Base
-  (CommandState(..), CurrentFile(..), ComputeMode(..), Rewrite(..), OutputForm(..), OutputConstraint(..))
+  (CommandState(..), CurrentFile(..), ComputeMode(..), Rewrite(..), OutputForm(..), OutputConstraint(..), OutputContextHet)
 import qualified Agda.Interaction.BasicOps as B
 import Agda.Interaction.EmacsTop
 import Agda.Interaction.JSON
@@ -24,7 +26,7 @@ import Agda.Syntax.Internal (telToList, Dom'(..), Dom)
 import Agda.Syntax.Position (Range, rangeIntervals, Interval'(..), Position'(..))
 import Agda.VersionCommit
 
-import Agda.TypeChecking.Monad (Comparison(..), inTopContext, ProblemId(..), TCM, TwinT''(..),TwinT', pattern UnsafeSingleT)
+import Agda.TypeChecking.Monad (Comparison(..), inTopContext, ProblemId(..), TCM, TwinT''(..),TwinT', HetSide(..), Het(..))
 import Agda.TypeChecking.Monad.MetaVars (getInteractionRange)
 import Agda.TypeChecking.Pretty (PrettyTCM(..), prettyTCM)
 -- borrowed from EmacsTop, for temporarily serialising stuff
@@ -139,10 +141,20 @@ encodeOCCmp f c i j k = kind k
   , "constraintObjs" @= map f [i, j]
   ]
 
+encodeOCCmpHet :: (Pretty name) => (a -> TCM Value) -> (b -> Value)
+  -> Comparison -> OutputContextHet name a -> b -> b -> T.Text
+  -> TCM Value
+encodeOCCmpHet g f c ctx i j k = kind k
+  [ "comparison"     @= encodeShow c
+  , "context"        #= encodeContextHet g ctx
+  , "constraintObjs" @= map f [i, j]
+  ]
+
   -- Goals
-encodeOC :: (a -> Value)
+encodeOC :: (Pretty name)
+  => (a -> Value)
   -> (b -> TCM Value)
-  -> OutputConstraint b a
+  -> OutputConstraint name b a
   -> TCM Value
 encodeOC f encodePrettyTCM = \case
  OfType i a -> kind "OfType"
@@ -153,6 +165,12 @@ encodeOC f encodePrettyTCM = \case
   [ "comparison"     @= encodeShow c
   , "type"           #= encodePrettyTCM a
   , "constraintObjs" @= map f [i, j]
+  ]
+ CmpInTypeHet c ctx a i j -> kind "CmpInTypeHet"
+  [ "comparison"     @= encodeShow c
+  , "context"        #= encodeContextHet encodePrettyTCM ctx
+  , "type"           #= encodeTwinT encodePrettyTCM a
+  , "constraintObjs" @= map f [unHet @'LHS i, unHet @'RHS j]
   ]
  CmpElim ps a is js -> kind "CmpElim"
   [ "polarities"     @= map encodeShow ps
@@ -166,6 +184,8 @@ encodeOC f encodePrettyTCM = \case
   [ "constraintObj"  @= f a
   ]
  CmpTypes  c i j -> encodeOCCmp f c i j "CmpTypes"
+ CmpTypesHet  c ctx i j -> encodeOCCmpHet encodePrettyTCM f
+                             c ctx (unHet @'LHS i) (unHet @'RHS j) "CmpTypesHet"
  CmpLevels c i j -> encodeOCCmp f c i j "CmpLevels"
  CmpTeles  c i j -> encodeOCCmp f c i j "CmpTeles"
  CmpSorts  c i j -> encodeOCCmp f c i j "CmpSorts"
@@ -211,20 +231,32 @@ encodeOC f encodePrettyTCM = \case
   , "type"           #= encodePrettyTCM a
   ]
 
--- TODO: Check that it's ok to return single value bare,
--- and double value as list.
+encodeContextHet :: (Pretty name)
+  => (b -> TCM Value)
+  -> OutputContextHet name b
+  -> TCM [Value]
+encodeContextHet encodePrettyTCM =
+  mapM (encodeNamedPretty (encodeTwinT encodePrettyTCM . unArg))
+
 encodeTwinT :: (b -> TCM Value)
   -> TwinT' b
   -> TCM Value
-encodeTwinT f (UnsafeSingleT a) = f a
+encodeTwinT f (SingleT a) = kind "Single" [ "type" #= f (unHet @'Both a) ]
+encodeTwinT f (TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}) = kind "TwinT" [
+   "necessary"  @= encodePretty necessary
+  ,"pid"        @= twinPid
+  ,"lhs"        #= f (unHet @'LHS    twinLHS)
+  ,"rhs"        #= f (unHet @'RHS    twinRHS)
+  ,"compat"     #= f (unHet @'Compat twinCompat)
+  ]
 
-encodeNamedPretty :: PrettyTCM a => (Name, a) -> TCM Value
-encodeNamedPretty (name, a) = obj
+encodeNamedPretty :: (Pretty name) => (a -> TCM Value) -> (name, a) -> TCM Value
+encodeNamedPretty encodePrettyTCM (name, a) = obj
   [ "name" @= encodePretty name
   , "term" #= encodePrettyTCM a
   ]
 
-instance EncodeTCM (OutputForm C.Expr C.Expr) where
+instance EncodeTCM (OutputForm C.Name C.Expr C.Expr) where
   encodeTCM (OutputForm range problems oc) = obj
     [ "range"      @= range
     , "problems"   @= problems
@@ -259,7 +291,7 @@ instance EncodeTCM DisplayInfo where
     [ "info"              @= toJSON info
     ]
   encodeTCM (Info_ModuleContents names tele contents) = kind "ModuleContents"
-    [ "contents"          #= forM contents encodeNamedPretty
+    [ "contents"          #= forM contents (encodeNamedPretty encodePrettyTCM)
     , "telescope"         #= forM (telToList tele) encodeDomType
     , "names"             @= map encodePretty names
     ]
@@ -276,7 +308,7 @@ instance EncodeTCM DisplayInfo where
           o -> show o
         ]
   encodeTCM (Info_SearchAbout results search) = kind "SearchAbout"
-    [ "results"           #= forM results encodeNamedPretty
+    [ "results"           #= forM results (encodeNamedPretty encodePrettyTCM)
     , "search"            @= toJSON search
     ]
   encodeTCM (Info_WhyInScope thing path v xs ms) = kind "WhyInScope"

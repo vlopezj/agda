@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Internal.TypeChecking ( tests ) where
 
@@ -27,7 +28,7 @@ import Internal.TypeChecking.Generators hiding ( tests )
 prop_telToListInv :: TermConfiguration -> Property
 prop_telToListInv conf =
   forAll (genC conf) $ \tel ->
-  telFromList (telToList tel) == tel
+  telFromList (telToList @Type tel) == tel
 
 -- | All elements of 'flattenTel' are well-scoped under the original telescope.
 prop_flattenTelScope :: TermConfiguration -> Property

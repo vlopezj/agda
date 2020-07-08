@@ -36,6 +36,7 @@ import {-# SOURCE #-} Agda.TypeChecking.Pretty
 import {-# SOURCE #-} Agda.TypeChecking.Rewriting
 import {-# SOURCE #-} Agda.TypeChecking.Reduce.Fast
 
+import Agda.Utils.Dependent
 import Agda.Utils.Functor
 import Agda.Utils.Lens
 import Agda.Utils.Maybe
@@ -186,10 +187,21 @@ instance Instantiate a => Instantiate (Closure a) where
         x <- enterClosure cl instantiate'
         return $ cl { clValue = x }
 
+instance Instantiate a => Instantiate (Het s a) where
+
+instance Instantiate ContextHet where
+  instantiate' = fmap ContextHet . go . unContextHet
+    where
+      go [] = return []
+      go (x@(n, v):vs) = (:) <$> ((n,) <$> instantiate' v) <*> (go vs)
+
 instance Instantiate Constraint where
   instantiate' (ValueCmp cmp t u v) = do
     (t,u,v) <- instantiate' (t,u,v)
     return $ ValueCmp cmp t u v
+  instantiate' (ValueCmpHet cmp tel t u v) = do
+    (tel,(t,u,v)) <- instantiate' (tel,(t,u,v))
+    return $ ValueCmpHet cmp tel t u v
   instantiate' (ValueCmpOnFace cmp p t u v) = do
     ((p,t),u,v) <- instantiate' ((p,t),u,v)
     return $ ValueCmpOnFace cmp p t u v
@@ -210,12 +222,8 @@ instance Instantiate Constraint where
   instantiate' c@CheckMetaInst{}    = return c
 
 instance Instantiate TwinT where
-  instantiate' = traverse instantiate'
 
-instance Instantiate CompareAs where
-  instantiate' (AsTermsOf a) = AsTermsOf <$> instantiate' a
-  instantiate' AsSizes       = return AsSizes
-  instantiate' AsTypes       = return AsTypes
+instance Instantiate a => Instantiate (CompareAs' a) where
 
 instance Instantiate Candidate where
   instantiate' (Candidate q u t ov) = Candidate q <$> instantiate' u <*> instantiate' t <*> pure ov
@@ -267,8 +275,8 @@ instance IsMeta a => IsMeta (LevelAtom' a) where
     NeutralLevel _ t -> isMeta t
     UnreducedLevel t -> isMeta t
 
-instance IsMeta TwinT where
-  isMeta (UnsafeSingleT a) = isMeta a
+-- instance IsMeta TwinT where
+--  isMeta (UnsafeSingleT a) = isMeta a
 
 instance IsMeta CompareAs where
   isMeta (AsTermsOf a) = isMeta a
@@ -785,14 +793,56 @@ instance Reduce a => Reduce (Closure a) where
         x <- enterClosure cl reduce'
         return $ cl { clValue = x }
 
-instance Reduce Telescope where
+instance (Subst t a, Reduce a) => Reduce (Tele a) where
   reduce' EmptyTel          = return EmptyTel
   reduce' (ExtendTel a tel) = ExtendTel <$> reduce' a <*> reduce' tel
+
+class ReduceHet a where
+  reduceHet' :: ContextHet -> a -> ReduceM a
+  default reduceHet' :: (Traversable t, a ~ t b, ReduceHet b) => ContextHet -> a -> ReduceM a
+  reduceHet' = traverse . reduceHet'
+
+instance ReduceHet TwinT where
+  reduceHet' :: ContextHet -> TwinT -> ReduceM TwinT
+  reduceHet' tel (SingleT a) = SingleT <$> underHet @'Both tel reduce' a
+  reduceHet' tel t@(TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}) = do
+    twinLHS <- underHet @'LHS tel reduce' twinLHS
+    twinRHS <- underHet @'RHS tel reduce' twinRHS
+    twinCompat <- underHet @'Compat tel reduce' twinCompat
+    return TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}
+
+-- 2020-07-07 TODO Make more efficient, or give up on names altogether
+-- instance ReduceHet ContextHet where
+--   reduceHet' env = go (telToList env)
+--     where
+--       go :: [Dom (ArgName, TwinT)] -> ContextHet -> ReduceM ContextHet
+--       go env EmptyTel = return EmptyTel
+--       go env (ExtendTel a (Abs x tel)) = ExtendTel <$> reduceHet' (telFromList env) a <*> (Abs x <$> go (env ++ [fmap (x,) a]) tel)
+--       go env (ExtendTel a (NoAbs{}))   = __IMPOSSIBLE__
+
+instance ReduceHet a => ReduceHet (Dom a)
+instance ReduceHet a => ReduceHet (CompareAs' a)
+
+instance Reduce ContextHet where
+  reduce' = fmap ContextHet . go [] . unContextHet
+    where
+      go env [] = return []
+      go env (x@(n, v):vs) = (:) <$> ((n,) <$> reduceHet' (ContextHet env) v) <*> (go (env ++ [x]) vs)
+
+instance (Sing s, HetSideIsType s ~ 'True, Reduce a) => ReduceHet (Het s a) where
+  reduceHet' tel a = underHet @s tel reduce' a
 
 instance Reduce Constraint where
   reduce' (ValueCmp cmp t u v) = do
     (t,u,v) <- reduce' (t,u,v)
     return $ ValueCmp cmp t u v
+  reduce' (ValueCmpHet cmp tel t u v) = do
+    -- 2020-07-07 TODO <victor> Should one reduce the telescope?
+    tel <- reduce' tel
+    t' <- traverse (reduceHet' tel) t
+    u' <- reduceHet' tel u
+    v' <- reduceHet' tel v
+    return $ ValueCmpHet cmp tel t' u' v'
   reduce' (ValueCmpOnFace cmp p t u v) = do
     ((p,t),u,v) <- reduce' ((p,t),u,v)
     return $ ValueCmpOnFace cmp p t u v
@@ -815,7 +865,7 @@ instance Reduce Constraint where
 instance Reduce TwinT where
   reduce' = traverse reduce'
 
-instance Reduce CompareAs where
+instance Reduce a => Reduce (CompareAs' a) where
   reduce' (AsTermsOf a) = AsTermsOf <$> reduce' a
   reduce' AsSizes       = return AsSizes
   reduce' AsTypes       = return AsTypes
@@ -957,10 +1007,52 @@ instance (Subst t a, Simplify a) => Simplify (Tele a) where
 instance Simplify ProblemConstraint where
   simplify' (PConstr pid c) = PConstr pid <$> simplify' c
 
+class SimplifyHet a where
+  simplifyHet' :: ContextHet -> a -> ReduceM a
+  default simplifyHet' :: (Traversable t, a ~ t b, SimplifyHet b) => ContextHet -> a -> ReduceM a
+  simplifyHet' = traverse . simplifyHet'
+
+instance SimplifyHet TwinT where
+  simplifyHet' :: ContextHet -> TwinT -> ReduceM TwinT
+  simplifyHet' tel (SingleT a) = SingleT <$> underHet @'Both tel simplify' a
+  simplifyHet' tel t@(TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}) = do
+    twinLHS <- underHet @'LHS tel simplify' twinLHS
+    twinRHS <- underHet @'RHS tel simplify' twinRHS
+    twinCompat <- underHet @'Compat tel simplify' twinCompat
+    return TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}
+
+-- 2020-07-07 TODO Make more efficient, or give up on names altogether
+-- instance {-# OVERLAPPING #-} SimplifyHet ContextHet where
+--   simplifyHet' env = go (telToList env)
+--     where
+--       go :: [Dom (ArgName, TwinT)] -> ContextHet -> ReduceM ContextHet
+--       go env EmptyTel = return EmptyTel
+--       go env (ExtendTel a (Abs x tel)) = ExtendTel <$> simplifyHet' (telFromList env) a <*> (Abs x <$> go (env ++ [fmap (x,) a]) tel)
+--       go env (ExtendTel a (NoAbs{}))   = __IMPOSSIBLE__
+
+instance SimplifyHet a => SimplifyHet (Dom a)
+instance SimplifyHet a => SimplifyHet (CompareAs' a)
+
+instance (Sing s, HetSideIsType s ~ 'True, Simplify a) => SimplifyHet (Het s a) where
+  simplifyHet' tel a = underHet @s tel simplify' a
+
+instance Simplify ContextHet where
+  simplify' = fmap ContextHet . go [] . unContextHet
+    where
+      go env [] = return []
+      go env (x@(n, v):vs) = (:) <$> ((n,) <$> simplifyHet' (ContextHet env) v) <*> (go (env ++ [x]) vs)
+
 instance Simplify Constraint where
   simplify' (ValueCmp cmp t u v) = do
     (t,u,v) <- simplify' (t,u,v)
     return $ ValueCmp cmp t u v
+  simplify' (ValueCmpHet cmp tel t u v) = do
+    -- 2020-07-07 TODO <victor> Should one simplify the telescope?
+    tel <- simplify' tel
+    t' <- traverse (simplifyHet' tel) t
+    u' <- simplifyHet' tel u
+    v' <- simplifyHet' tel v
+    return $ ValueCmpHet cmp tel t' u' v'
   simplify' (ValueCmpOnFace cmp p t u v) = do
     ((p,t),u,v) <- simplify' ((p,t),u,v)
     return $ ValueCmp cmp (AsTermsOf t) u v
@@ -983,11 +1075,8 @@ instance Simplify Constraint where
 instance Simplify TwinT where
   simplify' = traverse simplify'
 
-instance Simplify CompareAs where
-  simplify' (AsTermsOfType a) = AsTermsOfType <$> simplify' a
-  simplify' (AsTermsOfTwin a) = AsTermsOfTwin <$> simplify' a
-  simplify' AsSizes           = return AsSizes
-  simplify' AsTypes           = return AsTypes
+instance Simplify a => Simplify (CompareAs' a) where
+  simplify' = traverse simplify'
 
 -- UNUSED
 -- instance Simplify ConPatternInfo where
@@ -1144,10 +1233,52 @@ instance (Subst t a, Normalise a) => Normalise (Tele a) where
 instance Normalise ProblemConstraint where
   normalise' (PConstr pid c) = PConstr pid <$> normalise' c
 
+class NormaliseHet a where
+  normaliseHet' :: ContextHet -> a -> ReduceM a
+  default normaliseHet' :: (Traversable t, a ~ t b, NormaliseHet b) => ContextHet -> a -> ReduceM a
+  normaliseHet' = traverse . normaliseHet'
+
+instance NormaliseHet TwinT where
+  normaliseHet' :: ContextHet -> TwinT -> ReduceM TwinT
+  normaliseHet' tel (SingleT a) = SingleT <$> underHet @'Both tel normalise' a
+  normaliseHet' tel t@(TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}) = do
+    twinLHS <- underHet @'LHS tel normalise' twinLHS
+    twinRHS <- underHet @'RHS tel normalise' twinRHS
+    twinCompat <- underHet @'Compat tel normalise' twinCompat
+    return TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}
+
+-- 2020-07-07 TODO Make more efficient, or give up on names altogether
+-- instance {-# OVERLAPPING #-} NormaliseHet ContextHet where
+--   normaliseHet' env = go (telToList env)
+--     where
+--       go :: [Dom (ArgName, TwinT)] -> ContextHet -> ReduceM ContextHet
+--       go env EmptyTel = return EmptyTel
+--       go env (ExtendTel a (Abs x tel)) = ExtendTel <$> normaliseHet' (telFromList env) a <*> (Abs x <$> go (env ++ [fmap (x,) a]) tel)
+--       go env (ExtendTel a (NoAbs{}))   = __IMPOSSIBLE__
+
+instance NormaliseHet a => NormaliseHet (Dom a)
+instance NormaliseHet a => NormaliseHet (CompareAs' a)
+
+instance (Sing s, HetSideIsType s ~ 'True, Normalise a) => NormaliseHet (Het s a) where
+  normaliseHet' tel a = underHet @s tel normalise' a
+
+instance Normalise ContextHet where
+  normalise' = fmap ContextHet . go [] . unContextHet
+    where
+      go env [] = return []
+      go env (x@(n, v):vs) = (:) <$> ((n,) <$> normaliseHet' (ContextHet env) v) <*> (go (env ++ [x]) vs)
+
 instance Normalise Constraint where
   normalise' (ValueCmp cmp t u v) = do
     (t,u,v) <- normalise' (t,u,v)
     return $ ValueCmp cmp t u v
+  normalise' (ValueCmpHet cmp tel t u v) = do
+    -- 2020-07-07 TODO <victor> Should one normalise the telescope?
+    tel <- normalise' tel
+    t' <- traverse (normaliseHet' tel) t
+    u' <- normaliseHet' tel u
+    v' <- normaliseHet' tel v
+    return $ ValueCmpHet cmp tel t' u' v'
   normalise' (ValueCmpOnFace cmp p t u v) = do
     ((p,t),u,v) <- normalise' ((p,t),u,v)
     return $ ValueCmpOnFace cmp p t u v
@@ -1171,10 +1302,7 @@ instance Normalise TwinT where
   normalise' = traverse normalise'
 
 instance Normalise CompareAs where
-  normalise' (AsTermsOfType a) = AsTermsOfType <$> normalise' a
-  normalise' (AsTermsOfTwin a) = AsTermsOfTwin <$> normalise' a
-  normalise' AsSizes           = return AsSizes
-  normalise' AsTypes           = return AsTypes
+  normalise' = traverse normalise'
 
 instance Normalise ConPatternInfo where
   normalise' i = normalise' (conPType i) <&> \ t -> i { conPType = t }
@@ -1372,11 +1500,53 @@ instance InstantiateFull a => InstantiateFull (Closure a) where
 instance InstantiateFull ProblemConstraint where
   instantiateFull' (PConstr p c) = PConstr p <$> instantiateFull' c
 
+class InstantiateFullHet a where
+  instantiateFullHet' :: ContextHet -> a -> ReduceM a
+  default instantiateFullHet' :: (Traversable t, a ~ t b, InstantiateFullHet b) => ContextHet -> a -> ReduceM a
+  instantiateFullHet' = traverse . instantiateFullHet'
+
+instance InstantiateFullHet TwinT where
+  instantiateFullHet' :: ContextHet -> TwinT -> ReduceM TwinT
+  instantiateFullHet' tel (SingleT a) = SingleT <$> underHet @'Both tel instantiateFull' a
+  instantiateFullHet' tel t@(TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}) = do
+    twinLHS <- underHet @'LHS tel instantiateFull' twinLHS
+    twinRHS <- underHet @'RHS tel instantiateFull' twinRHS
+    twinCompat <- underHet @'Compat tel instantiateFull' twinCompat
+    return TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}
+
+-- 2020-07-07 TODO Make more efficient, or give up on names altogether
+-- instance InstantiateFullHet ContextHet where
+--   instantiateFullHet' env = go (telToList env)
+--     where
+--       go :: [Dom (ArgName, TwinT)] -> ContextHet -> ReduceM ContextHet
+--       go env EmptyTel = return EmptyTel
+--       go env (ExtendTel a (Abs x tel)) = ExtendTel <$> instantiateFullHet' (telFromList env) a <*> (Abs x <$> go (env ++ [fmap (x,) a]) tel)
+--       go env (ExtendTel a (NoAbs{}))   = __IMPOSSIBLE__
+
+instance InstantiateFullHet a => InstantiateFullHet (Dom a)
+instance InstantiateFullHet a => InstantiateFullHet (CompareAs' a)
+
+instance InstantiateFull ContextHet where
+  instantiateFull' = fmap ContextHet . go [] . unContextHet
+    where
+      go env [] = return []
+      go env (x@(n, v):vs) = (:) <$> ((n,) <$> instantiateFullHet' (ContextHet env) v) <*> (go (env ++ [x]) vs)
+
+instance (Sing s, HetSideIsType s ~ 'True, InstantiateFull a) => InstantiateFullHet (Het s a) where
+  instantiateFullHet' tel a = underHet @s tel instantiateFull' a
+
 instance InstantiateFull Constraint where
   instantiateFull' c = case c of
     ValueCmp cmp t u v -> do
       (t,u,v) <- instantiateFull' (t,u,v)
       return $ ValueCmp cmp t u v
+    ValueCmpHet cmp tel t u v -> do
+      -- 2020-07-07 TODO <victor> Should one reduce the telescope?
+      tel <- instantiateFull' tel
+      t' <- traverse (instantiateFullHet' tel) t
+      u' <- instantiateFullHet' tel u
+      v' <- instantiateFullHet' tel v
+      return $ ValueCmpHet cmp tel t' u' v'
     ValueCmpOnFace cmp p t u v -> do
       ((p,t),u,v) <- instantiateFull' ((p,t),u,v)
       return $ ValueCmpOnFace cmp p t u v
@@ -1398,11 +1568,7 @@ instance InstantiateFull Constraint where
 
 instance InstantiateFull TwinT where
 
-instance InstantiateFull CompareAs where
-  instantiateFull' (AsTermsOfType a) = AsTermsOfType <$> instantiateFull' a
-  instantiateFull' (AsTermsOfTwin a) = AsTermsOfTwin <$> instantiateFull' a
-  instantiateFull' AsSizes           = return AsSizes
-  instantiateFull' AsTypes           = return AsTypes
+instance InstantiateFull a => InstantiateFull (CompareAs' a) where
 
 instance InstantiateFull Signature where
   instantiateFull' (Sig a b c) = uncurry3 Sig <$> instantiateFull' (a, b, c)

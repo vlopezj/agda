@@ -28,6 +28,7 @@ import Agda.TypeChecking.Substitute
 import Agda.TypeChecking.Monad.Open
 import Agda.TypeChecking.Monad.State
 
+import Agda.Utils.Dependent
 import Agda.Utils.Empty
 import Agda.Utils.Function
 import Agda.Utils.Functor
@@ -273,6 +274,7 @@ class AddContext b where
 newtype KeepNames a = KeepNames a
 
 instance {-# OVERLAPPABLE #-} AddContext a => AddContext [a] where
+  -- addContext [x1, x2, ..., xn] m == addContext x1 (addContext x2 ... (addContext xn m)...)
   addContext = flip (foldr addContext)
   contextSize = sum . map contextSize
 
@@ -410,6 +412,12 @@ defaultAddLetBinding' x v t ret = do
 addLetBinding :: MonadAddContext m => ArgInfo -> Name -> Term -> Type -> m a -> m a
 addLetBinding info x v t0 ret = addLetBinding' x v (defaultArgDom info t0) ret
 
+-- | Run under a side of a twin context
+{-# SPECIALIZE underHet :: ContextHet -> (a -> TCM b) -> Het 'LHS a -> TCM (Het 'LHS b) #-}
+{-# SPECIALIZE underHet :: ContextHet -> (a -> TCM b) -> Het 'RHS a -> TCM (Het 'RHS b) #-}
+{-# SPECIALIZE underHet :: ContextHet -> (a -> TCM b) -> Het 'Compat a -> TCM (Het 'Compat b) #-}
+underHet :: forall s m a b. (MonadAddContext m, Sing s, HetSideIsType s ~ 'True) => ContextHet -> (a -> m b) -> Het s a -> m (Het s b)
+underHet ctx f = traverse (addContext (twinContextAt @s ctx) . f)
 
 -- * Querying the context
 

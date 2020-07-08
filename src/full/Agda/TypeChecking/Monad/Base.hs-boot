@@ -1,3 +1,5 @@
+{-# LANGUAGE KindSignatures #-}
+
 module Agda.TypeChecking.Monad.Base where
 
 import Control.Monad.IO.Class (MonadIO)
@@ -21,6 +23,11 @@ data HighlightingLevel
 instance Show HighlightingLevel
 instance Read HighlightingLevel
 
+
+data HetSide = LHS | RHS | Compat | Whole | Both
+newtype Het (side :: HetSide) t = Het { unHet :: t }
+
+instance Functor (Het side)
 
 data TCEnv
 data TCState
