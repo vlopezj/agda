@@ -1,10 +1,7 @@
-{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TypeFamilies               #-} -- for type equality ~
-{-# LANGUAGE GADTs                      #-} -- for type equality ~
-{-# LANGUAGE ViewPatterns               #-}
 
 module Agda.TypeChecking.Monad.Base where
 
@@ -71,6 +68,7 @@ import Agda.Syntax.Scope.Base
 import qualified Agda.Syntax.Info as Info
 
 import Agda.TypeChecking.CompiledClause
+import {-# SOURCE #-} Agda.TypeChecking.Conversion.ContextHet
 import Agda.TypeChecking.Coverage.SplitTree
 import Agda.TypeChecking.Positivity.Occurrence
 import Agda.TypeChecking.Free.Lazy (Free(freeVars'), underBinder', underBinder)
@@ -91,7 +89,6 @@ import Agda.Interaction.Highlighting.Precise
 import Agda.Interaction.Library
 
 import Agda.Utils.Benchmark (MonadBench(..))
-import Agda.Utils.Dependent
 import Agda.Utils.FileName
 import Agda.Utils.Functor
 import Agda.Utils.Hash
@@ -1022,129 +1019,6 @@ data ProblemConstraint = PConstr
 instance HasRange ProblemConstraint where
   getRange = getRange . theConstraint
 
-data TwinT'' b a  =
-    SingleT { unSingleT :: Het 'Both a }
-  | TwinT { twinPid    :: [ProblemId]      -- ^ Unification problem which is sufficient
-                                           --   for LHS and RHS to be equal
-          , necessary  :: b                -- ^ Whether solving twinPid is necessary,
-                                           --   not only sufficient.
-          , twinLHS    :: Het 'LHS a       -- ^ Left hand side of the twin
-          , twinRHS    :: Het 'RHS a       -- ^ Right hand side of the twin
-          , twinCompat :: Het 'Compat a    -- ^ A term which can be used instead of the
-                                      --   twin for backwards compatibility
-                                      --   purposes.
-          }
-   deriving (Data, Show, Functor, Foldable, Traversable)
-
-type TwinT' = TwinT'' Bool
-
-data WithHet a = WithHet ContextHet a
-
-type family HetSideIsType (s :: HetSide) :: Bool where
-  HetSideIsType 'LHS    = 'True
-  HetSideIsType 'RHS    = 'True
-  HetSideIsType 'Compat = 'True
-  HetSideIsType 'Both   = 'True
-  HetSideIsType 'Whole  = 'False
-{-# INLINE twinAt #-}
-twinAt :: forall s. (Sing s, HetSideIsType s ~ 'True) => TwinT -> Type
-twinAt (SingleT a) = unHet @'Both a
-twinAt TwinT{twinLHS,twinRHS,twinCompat} = case (sing :: SingT s) of
-  SLHS    -> unHet @s $ twinLHS
-  SBoth   -> unHet @'LHS $ twinLHS
-  SRHS    -> unHet @s $ twinRHS
-  SCompat -> unHet @s $ twinCompat
-
-unTwinTCompat :: TwinT'' b a -> a
-unTwinTCompat (SingleT s) = unHet @'Both s
-unTwinTCompat (TwinT{twinCompat=s}) = unHet @'Compat s
-
-pattern TwinTCompat :: a -> TwinT'' b a
-pattern TwinTCompat s <- (unTwinTCompat -> s)
-  where
-    TwinTCompat s = SingleT (Het @'Both s)
-
-#if __GLASGOW_HASKELL__ >= 802
-{-# COMPLETE TwinTCompat #-}
-#endif
-
--- We do not derive Traverse because we want to be careful when handling the "necessary" bit
-openTwinT :: TwinT'' Bool a -> TwinT'' () a
-openTwinT (SingleT a) = SingleT a
-openTwinT (TwinT{twinPid,twinLHS,twinRHS,twinCompat}) =
-  TwinT{twinPid,necessary=(),twinLHS,twinRHS,twinCompat}
-
-closeTwinT :: TwinT'' () a -> TwinT'' Bool a
-closeTwinT (SingleT a) = SingleT a
-closeTwinT (TwinT{twinPid,twinLHS,twinRHS,twinCompat}) =
-  TwinT{twinPid,necessary=False,twinLHS,twinRHS,twinCompat}
-
-type TwinT = TwinT' Type
-
-instance Free TwinT where
-
-instance TermLike TwinT where
-  traverseTermM f = \case
-    SingleT a -> SingleT <$> traverseTermM f a
-    TwinT{twinPid,twinLHS=a,twinRHS=b,twinCompat=c} ->
-      (\a' b' c' -> TwinT{twinPid,necessary=False,twinLHS=a',twinRHS=b',twinCompat=c'}) <$>
-        traverseTermM f a <*> traverseTermM f b <*> traverseTermM f c
-
-instance Pretty a => Pretty (TwinT' a) where
-  pretty (SingleT a) = pretty a
-  pretty (TwinT{twinPid,necessary,twinLHS=a,twinRHS=b}) =
-    pretty a <> "‡"
-             <> "["
-             <> pretty twinPid
-             <> (if necessary then "" else "*")
-             <> "]"
-             <> pretty b
-
-data HetSide = LHS | RHS | Compat | Whole | Both
-data instance SingT (a :: HetSide) where
-  SLHS    :: SingT 'LHS
-  SRHS    :: SingT 'RHS
-  SCompat :: SingT 'Compat
-  SWhole  :: SingT 'Whole
-  SBoth   :: SingT 'Both
-instance Sing 'LHS    where sing = SLHS
-instance Sing 'RHS    where sing = SRHS
-instance Sing 'Both   where sing = SBoth
-instance Sing 'Compat where sing = SCompat
-instance Sing 'Whole  where sing = SWhole
-
-newtype Het (side :: HetSide) t = Het { unHet :: t }
-  deriving (Data, Show, Functor, Foldable, Traversable, Pretty)
-instance Applicative (Het s) where
-  pure = Het
-  mf <*> ma = mf >>= (\f -> ma >>= (\a -> pure (f a)))
-instance Monad (Het s) where
-  Het a >>= f = f a
-
-instance TermLike t => TermLike (Het a t) where
-
--- | The context is in left-to-right order
-newtype ContextHet = ContextHet { unContextHet :: [(Name, Dom TwinT)] }
-  deriving (Data, Show)
-
-twinContextAt :: forall s. (Sing s, HetSideIsType s ~ 'True) => ContextHet -> [(Name, Dom Type)]
-twinContextAt = fmap (fmap (fmap (twinAt @s))) . unContextHet
-
-instance TermLike ContextHet where
-  foldTerm f = go . unContextHet
-    where
-      go [] = mempty
-      go ((_,v):vs) = foldTerm f (v, ContextHet vs)
-  traverseTermM = __IMPOSSIBLE__
-
-instance Free ContextHet where
-  freeVars' = go . unContextHet
-    where
-      go []         = mempty
-      go ((_,v):vs) = freeVars' v <> underBinder (freeVars' (ContextHet vs))
-
-instance Sized ContextHet where
-  size = length . unContextHet
 
 data Constraint
   = ValueCmp Comparison CompareAs Term Term

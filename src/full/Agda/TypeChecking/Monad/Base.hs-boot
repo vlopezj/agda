@@ -1,14 +1,19 @@
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeFamilies   #-}
 
 module Agda.TypeChecking.Monad.Base where
 
 import Control.Monad.IO.Class (MonadIO)
+import Data.Data (Data)
 import Data.IORef (IORef)
 import Data.Map (Map)
 
 import Agda.Syntax.Common (Nat)
 import Agda.Syntax.Concrete.Name (TopLevelModuleName)
+import Agda.Syntax.Internal (Term)
+
 import Agda.Utils.FileName (AbsolutePath)
+import Agda.Utils.Pretty (Pretty)
 
 data Warning
 
@@ -22,12 +27,6 @@ instance Read HighlightingMethod
 data HighlightingLevel
 instance Show HighlightingLevel
 instance Read HighlightingLevel
-
-
-data HetSide = LHS | RHS | Compat | Whole | Both
-newtype Het (side :: HetSide) t = Het { unHet :: t }
-
-instance Functor (Het side)
 
 data TCEnv
 data TCState
@@ -45,8 +44,10 @@ type ModuleToSource = Map TopLevelModuleName AbsolutePath
 type BackendName = String
 
 data Comparison
-newtype ProblemId = ProblemId Nat
-data Polarity
 
-data TwinT'' b a
-type TwinT' = TwinT'' Bool
+newtype ProblemId = ProblemId Nat
+instance Show ProblemId
+instance Data ProblemId
+instance Pretty ProblemId
+
+data Polarity

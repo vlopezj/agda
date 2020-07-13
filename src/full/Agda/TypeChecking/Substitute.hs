@@ -42,6 +42,7 @@ import Agda.TypeChecking.Monad.Base
 import Agda.TypeChecking.Monad.Options (typeInType)
 import Agda.TypeChecking.Free as Free
 import Agda.TypeChecking.CompiledClause
+import {-# SOURCE #-} Agda.TypeChecking.Conversion.ContextHet
 import Agda.TypeChecking.Positivity.Occurrence as Occ
 
 import Agda.TypeChecking.Substitute.Class

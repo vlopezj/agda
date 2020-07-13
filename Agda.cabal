@@ -422,6 +422,7 @@ library
                     Agda.TypeChecking.Constraints
                     Agda.TypeChecking.Conversion
                     Agda.TypeChecking.Conversion.Pure
+                    Agda.TypeChecking.Conversion.ContextHet
                     Agda.TypeChecking.Coverage
                     Agda.TypeChecking.Coverage.Match
                     Agda.TypeChecking.Coverage.SplitTree
@@ -586,6 +587,7 @@ library
                     Agda.Utils.POMonoid
                     Agda.Utils.Pretty
                     Agda.Utils.SemiRing
+                    Agda.Utils.Semigroup
                     Agda.Utils.Singleton
                     Agda.Utils.Size
                     Agda.Utils.SmallSet

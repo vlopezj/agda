@@ -1,16 +1,13 @@
 
 module Agda.TypeChecking.Pretty where
 
-import Control.Monad.Reader (ReaderT)
-import Control.Monad.State  (StateT)
-
 import Data.String (IsString)
 import Data.Semigroup (Semigroup)
 
 import Agda.Syntax.Common (NameId)
 import Agda.Syntax.Internal
 
-import Agda.TypeChecking.Monad.Base
+import {-# SOURCE #-} Agda.TypeChecking.Monad.Base
 import {-# SOURCE #-} Agda.TypeChecking.Monad.Builtin
 import {-# SOURCE #-} Agda.TypeChecking.Monad.Context (MonadAddContext)
 import Agda.TypeChecking.Monad.Debug (MonadDebug)
@@ -59,8 +56,6 @@ type MonadPretty m =
 -- This instance is more specific than a generic instance
 -- @Semigroup a => Semigroup (TCM a)@.
 instance {-# OVERLAPPING #-} Semigroup (TCM Doc)
-instance Applicative m    => Semigroup (ReaderT s m Doc)
-instance Monad m          => Semigroup (StateT s m Doc)
 
 class PrettyTCM a where
   prettyTCM :: MonadPretty m => a -> m Doc

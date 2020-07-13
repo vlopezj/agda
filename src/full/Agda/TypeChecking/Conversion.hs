@@ -1,4 +1,6 @@
+{-# LANGUAGE KindSignatures           #-}
 {-# LANGUAGE NondecreasingIndentation #-}
+{-# LANGUAGE TypeFamilies             #-}
 
 module Agda.TypeChecking.Conversion where
 
@@ -29,6 +31,7 @@ import Agda.TypeChecking.Substitute
 import qualified Agda.TypeChecking.SyntacticEquality as SynEq
 import Agda.TypeChecking.Telescope
 import Agda.TypeChecking.Constraints
+import Agda.TypeChecking.Conversion.ContextHet
 import Agda.TypeChecking.Conversion.Pure (pureCompareAs)
 import {-# SOURCE #-} Agda.TypeChecking.CheckInternal (infer)
 import Agda.TypeChecking.Forcing (isForced, nextIsForced)
@@ -46,6 +49,7 @@ import Agda.TypeChecking.Primitive
 import Agda.TypeChecking.Warnings (MonadWarning)
 import Agda.Interaction.Options
 
+import Agda.Utils.Dependent
 import Agda.Utils.Functor
 import Agda.Utils.List1 (List1, pattern (:|))
 import qualified Agda.Utils.List1 as List1

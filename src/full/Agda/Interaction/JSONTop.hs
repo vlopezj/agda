@@ -26,7 +26,8 @@ import Agda.Syntax.Internal (telToList, Dom'(..), Dom)
 import Agda.Syntax.Position (Range, rangeIntervals, Interval'(..), Position'(..))
 import Agda.VersionCommit
 
-import Agda.TypeChecking.Monad (Comparison(..), inTopContext, ProblemId(..), TCM, TwinT''(..),TwinT', HetSide(..), Het(..))
+import Agda.TypeChecking.Monad (Comparison(..), inTopContext, ProblemId(..), TCM)
+import Agda.TypeChecking.Conversion.ContextHet (TwinT''(..),TwinT', HetSide(..), Het(..))
 import Agda.TypeChecking.Monad.MetaVars (getInteractionRange)
 import Agda.TypeChecking.Pretty (PrettyTCM(..), prettyTCM)
 -- borrowed from EmacsTop, for temporarily serialising stuff

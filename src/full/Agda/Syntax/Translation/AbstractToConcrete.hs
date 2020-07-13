@@ -61,6 +61,7 @@ import Agda.Syntax.Abstract.PatternSynonyms
 import Agda.Syntax.Scope.Base
 import Agda.Syntax.Scope.Monad ( tryResolveName )
 
+import Agda.TypeChecking.Conversion.ContextHet (TwinT')
 import Agda.TypeChecking.Monad.State (getScope, getAllPatternSyns)
 import Agda.TypeChecking.Monad.Base
 import Agda.TypeChecking.Monad.Debug

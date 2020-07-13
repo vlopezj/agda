@@ -43,6 +43,7 @@ import qualified Agda.Syntax.Info as A
 import Agda.Syntax.Scope.Base  (AbstractName(..))
 import Agda.Syntax.Scope.Monad (withContextPrecedence)
 
+import Agda.TypeChecking.Conversion.ContextHet
 import Agda.TypeChecking.Coverage.SplitTree
 import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Positivity.Occurrence
@@ -58,6 +59,7 @@ import Agda.Utils.Null
 import Agda.Utils.Permutation (Permutation)
 import Agda.Utils.Pretty (Pretty, prettyShow)
 import qualified Agda.Utils.Pretty as P
+
 
 import Agda.Utils.Impossible
 
@@ -161,9 +163,6 @@ type MonadPretty m =
 -- | This instance is more specific than a generic instance
 -- @Semigroup a => Semigroup (TCM a)@.
 instance {-# OVERLAPPING #-} Semigroup (TCM Doc)         where (<>) = liftA2 (<>)
-instance Applicative m    => Semigroup (ReaderT s m Doc) where (<>) = liftA2 (<>)
-instance Monad m          => Semigroup (StateT s m Doc)  where (<>) = liftA2 (<>)
-
 
 class PrettyTCM a where
   prettyTCM :: MonadPretty m => a -> m Doc

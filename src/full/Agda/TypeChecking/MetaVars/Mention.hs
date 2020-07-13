@@ -7,6 +7,7 @@ import qualified Data.HashSet as HashSet
 import Agda.Syntax.Common
 import Agda.Syntax.Internal
 import Agda.TypeChecking.Monad
+import Agda.TypeChecking.Conversion.ContextHet
 
 class MentionsMeta t where
   mentionsMetas :: HashSet MetaId -> t -> Bool

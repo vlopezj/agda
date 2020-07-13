@@ -50,6 +50,7 @@ import Agda.Syntax.Parser
 import Agda.TheTypeChecker
 import Agda.TypeChecking.Constraints
 import Agda.TypeChecking.Conversion
+import Agda.TypeChecking.Conversion.ContextHet as H
 import Agda.TypeChecking.Errors ( stringTCErr )
 import Agda.TypeChecking.Monad as M hiding (MetaInfo)
 import Agda.TypeChecking.MetaVars
@@ -367,13 +368,13 @@ outputFormId (OutputForm _ _ o) = out o
     out o = case o of
       OfType i _                 -> i
       CmpInType _ _ i _          -> i
-      CmpInTypeHet _ _ _ i _     -> unHet @'M.LHS i
+      CmpInTypeHet _ _ _ i _     -> unHet @'H.LHS i
       CmpElim _ _ (i:_) _        -> i
       CmpElim _ _ [] _           -> __IMPOSSIBLE__
       JustType i                 -> i
       CmpLevels _ i _            -> i
       CmpTypes _ i _             -> i
-      CmpTypesHet _ _ i _        -> unHet @'M.LHS i
+      CmpTypesHet _ _ i _        -> unHet @'H.LHS i
       CmpTeles _ i _             -> i
       JustSort i                 -> i
       CmpSorts _ i _             -> i
@@ -566,16 +567,16 @@ instance (name ~ A.Name, name' ~ C.Name,
     toConcrete (CmpInTypeHet cmp ctx t e e') = do
       toConcreteContextHet ctx $ \ctx' ->
         CmpInTypeHet cmp ctx' <$> toConcreteCtx TopCtx t
-                              <*> traverse @(Het 'M.LHS) (toConcreteCtx TopCtx) e
-                              <*> traverse @(Het 'M.RHS) (toConcreteCtx TopCtx) e'
+                              <*> traverse @(Het 'H.LHS) (toConcreteCtx TopCtx) e
+                              <*> traverse @(Het 'H.RHS) (toConcreteCtx TopCtx) e'
     toConcrete (CmpElim cmp t e e') =
       CmpElim cmp <$> toConcreteCtx TopCtx t <*> toConcreteCtx TopCtx e <*> toConcreteCtx TopCtx e'
     toConcrete (CmpTypes cmp e e') = CmpTypes cmp <$> toConcreteCtx TopCtx e
                                                   <*> toConcreteCtx TopCtx e'
     toConcrete (CmpTypesHet cmp ctx e e') =
       toConcreteContextHet ctx $ \ctx' -> CmpTypesHet cmp ctx' <$>
-                traverse @(Het 'M.LHS) (toConcreteCtx TopCtx) e
-            <*> traverse @(Het 'M.RHS) (toConcreteCtx TopCtx) e'
+                traverse @(Het 'H.LHS) (toConcreteCtx TopCtx) e
+            <*> traverse @(Het 'H.RHS) (toConcreteCtx TopCtx) e'
     toConcrete (CmpLevels cmp e e') = CmpLevels cmp <$> toConcreteCtx TopCtx e
                                                     <*> toConcreteCtx TopCtx e'
     toConcrete (CmpTeles cmp e e') = CmpTeles cmp <$> toConcrete e <*> toConcrete e'
@@ -648,8 +649,8 @@ getConstraintsMentioning norm m = getConstrs instantiateBlockingFull (mentionsMe
     hasHeadMeta c =
       case c of
         ValueCmp _ _ u v           -> isMeta u `mplus` isMeta v
-        ValueCmpHet _ _ _ u v      -> isMeta (unHet @'M.LHS u) `mplus`
-                                      isMeta (unHet @'M.RHS v)
+        ValueCmpHet _ _ _ u v      -> isMeta (unHet @'H.LHS u) `mplus`
+                                      isMeta (unHet @'H.RHS v)
         ValueCmpOnFace cmp p t u v -> isMeta u `mplus` isMeta v
         -- TODO: extend to other comparisons?
         ElimCmp cmp fs t v as bs   -> Nothing
