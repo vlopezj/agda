@@ -403,7 +403,7 @@ compareTel t1 t2 cmp tel1 tel2 =
     (EmptyTel, _)        -> bad
     (_, EmptyTel)        -> bad
     (ExtendTel dom1{-@(Dom i1 a1)-} tel1, ExtendTel dom2{-@(Dom i2 a2)-} tel2) -> do
-      compareDom SFalse () cmp dom1 dom2 tel1 tel2 bad bad bad bad $
+      compareDom SFalse () (fromCmp cmp) dom1 dom2 tel1 tel2 bad bad bad bad $
         compareTel t1 t2 cmp (absBody tel1) (absBody tel2)
   where
     -- Andreas, 2011-05-10 better report message about types
@@ -694,7 +694,7 @@ compareAtom cmp t m n =
                 [ "t1 =" <+> prettyTCM t1
                 , "t2 =" <+> prettyTCM t2
                 ]
-              compareDom SFalse () cmp dom1 dom2 b1 b2 errH errR errQ errC $
+              compareDom SFalse () (flipCmp (fromCmp cmp)) dom1 dom2 b1 b2 errH errR errQ errC $
                 compareType cmp (absBody b1) (absBody b2)
             where
             errH = typeError $ UnequalHiding t1 t2
@@ -707,7 +707,7 @@ compareAtom cmp t m n =
 {-# SPECIALIZE compareDom :: (MonadConversion m , Free c)
   => SingT 'False
   -> ()
-  -> Comparison
+  -> CompareDirection
   -> Dom Type
   -> Dom Type
   -> Abs c
@@ -721,7 +721,7 @@ compareAtom cmp t m n =
 compareDom :: forall (het :: Bool) m c. (MonadConversion m , Free c)
   => SingT het
   -> If het ContextHet ()
-  -> Comparison -- ^ @cmp@ The comparison direction
+  -> CompareDirection -- ^ @cmp@ The comparison direction
   -> Dom Type   -- ^ @a1@  The smaller domain.
   -> Dom Type   -- ^ @a2@  The other domain.
   -> Abs c      -- ^ @b1@  The smaller codomain.
@@ -737,19 +737,20 @@ compareDom hetuni ctx cmp0
   dom2@(Dom{domInfo = i2, unDom = a2})
   b1 b2 errH errR errQ errC cont = do
   hasSubtyping <- collapseDefault . optSubtyping <$> pragmaOptions
-  let cmp = if hasSubtyping then cmp0 else CmpEq
+  let cmp = if hasSubtyping then cmp0 else DirEq
   if | not $ sameHiding dom1 dom2 -> errH
-     | not $ compareRelevance cmp (getRelevance dom1) (getRelevance dom2) -> errR
-     | not $ compareQuantity  cmp (getQuantity  dom1) (getQuantity  dom2) -> errQ
-     | not $ compareCohesion  cmp (getCohesion  dom1) (getCohesion  dom2) -> errC
+     | not $ dirToCmp compareRelevance cmp (getRelevance dom1) (getRelevance dom2) -> errR
+     | not $ dirToCmp compareQuantity  cmp (getQuantity  dom1) (getQuantity  dom2) -> errQ
+     | not $ dirToCmp compareCohesion  cmp (getCohesion  dom1) (getCohesion  dom2) -> errC
      | otherwise -> do
       let r = max (getRelevance dom1) (getRelevance dom2)
               -- take "most irrelevant"
-          dependent = (r /= Irrelevant) && isBinderUsed b2
-      pid <- newProblem_ $ compareType cmp0 a1 a2
+          dependent = (r /= Irrelevant) && dirToCmp (\_ _ b2 -> isBinderUsed b2) cmp b1 b2
+      pid <- newProblem_ $ dirToCmp compareType cmp0 a1 a2
+      let a0 = dirToCmp (\_ a1 _ -> a1) cmp a1 a2
       (dom_a, dom) <- if dependent
-             then (\ a -> (a, dom1 {unDom = a})) <$> blockTypeOnProblem a1 pid
-             else return (a1, dom1)
+             then (\ a -> (a, dom1 {unDom = a})) <$> blockTypeOnProblem a0 pid
+             else return (a0, dom1)
         -- We only need to require a1 == a2 if b2 is dependent
         -- If it's non-dependent it doesn't matter what we add to the context.
       let name = suggests [ Suggestion b1 , Suggestion b2 ]
