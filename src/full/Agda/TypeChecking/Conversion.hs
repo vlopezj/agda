@@ -403,7 +403,7 @@ compareTel t1 t2 cmp tel1 tel2 =
     (EmptyTel, _)        -> bad
     (_, EmptyTel)        -> bad
     (ExtendTel dom1{-@(Dom i1 a1)-} tel1, ExtendTel dom2{-@(Dom i2 a2)-} tel2) -> do
-      compareDom cmp dom1 dom2 tel1 tel2 bad bad bad bad $
+      compareDom SFalse () cmp dom1 dom2 tel1 tel2 bad bad bad bad $
         compareTel t1 t2 cmp (absBody tel1) (absBody tel2)
   where
     -- Andreas, 2011-05-10 better report message about types
@@ -694,7 +694,7 @@ compareAtom cmp t m n =
                 [ "t1 =" <+> prettyTCM t1
                 , "t2 =" <+> prettyTCM t2
                 ]
-              compareDom cmp dom2 dom1 b1 b2 errH errR errQ errC $
+              compareDom SFalse () cmp dom1 dom2 b1 b2 errH errR errQ errC $
                 compareType cmp (absBody b1) (absBody b2)
             where
             errH = typeError $ UnequalHiding t1 t2
@@ -704,19 +704,35 @@ compareAtom cmp t m n =
           _ -> __IMPOSSIBLE__
 
 -- | Check whether @a1 `cmp` a2@ and continue in context extended by @a1@.
-compareDom :: (MonadConversion m , Free c)
-  => Comparison -- ^ @cmp@ The comparison direction
+{-# SPECIALIZE compareDom :: (MonadConversion m , Free c)
+  => SingT 'False
+  -> ()
+  -> Comparison
+  -> Dom Type
+  -> Dom Type
+  -> Abs c
+  -> Abs c
+  -> m ()
+  -> m ()
+  -> m ()
+  -> m ()
+  -> m ()
+  -> m () #-}
+compareDom :: forall (het :: Bool) m c. (MonadConversion m , Free c)
+  => SingT het
+  -> If het ContextHet ()
+  -> Comparison -- ^ @cmp@ The comparison direction
   -> Dom Type   -- ^ @a1@  The smaller domain.
   -> Dom Type   -- ^ @a2@  The other domain.
-  -> Abs b      -- ^ @b1@  The smaller codomain.
+  -> Abs c      -- ^ @b1@  The smaller codomain.
   -> Abs c      -- ^ @b2@  The bigger codomain.
   -> m ()     -- ^ Continuation if mismatch in 'Hiding'.
   -> m ()     -- ^ Continuation if mismatch in 'Relevance'.
   -> m ()     -- ^ Continuation if mismatch in 'Quantity'.
   -> m ()     -- ^ Continuation if mismatch in 'Cohesion'.
-  -> m ()     -- ^ Continuation if comparison is successful.
+  -> If het (ContextHet -> m ()) (m ()) -- ^ Continuation if comparison is successful.
   -> m ()
-compareDom cmp0
+compareDom hetuni ctx cmp0
   dom1@(Dom{domInfo = i1, unDom = a1})
   dom2@(Dom{domInfo = i2, unDom = a2})
   b1 b2 errH errR errQ errC cont = do
@@ -731,13 +747,24 @@ compareDom cmp0
               -- take "most irrelevant"
           dependent = (r /= Irrelevant) && isBinderUsed b2
       pid <- newProblem_ $ compareType cmp0 a1 a2
-      dom <- if dependent
-             then (\ a -> dom1 {unDom = a}) <$> blockTypeOnProblem a1 pid
-             else return dom1
+      (dom_a, dom) <- if dependent
+             then (\ a -> (a, dom1 {unDom = a})) <$> blockTypeOnProblem a1 pid
+             else return (a1, dom1)
         -- We only need to require a1 == a2 if b2 is dependent
         -- If it's non-dependent it doesn't matter what we add to the context.
       let name = suggests [ Suggestion b1 , Suggestion b2 ]
-      addContext (name, dom) $ cont
+      -- Víctor, 2020-07-13: We need to specify that the return type is ()
+      -- See https://stackoverflow.com/questions/28582210/type-inference-with-gadts-a0-is-untouchable
+      () <- case hetuni of
+        STrue  -> do
+          addContextHet ctx (name, dom{unDom =
+                            TwinT{necessary  = True,
+                                  twinPid    = [pid],
+                                  twinLHS    = Het @'LHS a1,
+                                  twinCompat = Het @'Compat dom_a,
+                                  twinRHS    = Het @'RHS a2
+                                 }}) cont
+        SFalse -> addContext (name, dom) $ cont
       stealConstraints pid
         -- Andreas, 2013-05-15 Now, comparison of codomains is not
         -- blocked any more by getting stuck on domains.
