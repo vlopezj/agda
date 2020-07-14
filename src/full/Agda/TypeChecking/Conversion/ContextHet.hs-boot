@@ -13,6 +13,7 @@ data TwinT'' a b
 instance (Data a, Data b) => Data (TwinT'' a b)
 instance (Show a, Show b) => Show (TwinT'' a b)
 instance Functor (TwinT'' b)
+instance Foldable (TwinT'' b)
 
 type TwinT' = TwinT'' Bool
 

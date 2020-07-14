@@ -1173,7 +1173,7 @@ instance TermLike a => TermLike (CompareAs' a) where
     AsSizes     -> return AsSizes
     AsTypes     -> return AsTypes
 
-instance AllMetas CompareAs
+instance AllMetas a => AllMetas (CompareAs' a) where allMetas f = foldMap (allMetas f)
 
 ---------------------------------------------------------------------------
 -- * Open things

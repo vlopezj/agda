@@ -7,6 +7,7 @@ import qualified Data.Set as Set
 import Agda.Syntax.Common
 import Agda.Syntax.Internal
 import Agda.Syntax.Internal.Generic
+import {-# SOURCE #-} Agda.TypeChecking.Conversion.ContextHet
 
 import Agda.Utils.Singleton
 
@@ -43,6 +44,10 @@ instance (AllMetas a, AllMetas b, AllMetas c, AllMetas d) => AllMetas (a, b, c, 
 instance AllMetas a => AllMetas [a]       where allMetas f xs = foldMap (allMetas f) xs
 instance AllMetas a => AllMetas (Maybe a) where allMetas f xs = foldMap (allMetas f) xs
 instance AllMetas a => AllMetas (Arg a)   where allMetas f xs = foldMap (allMetas f) xs
+
+instance AllMetas a => AllMetas (Het side a) where allMetas f = allMetas f . unHet
+instance AllMetas a => AllMetas (TwinT' a) where allMetas f = foldMap (allMetas f)
+instance AllMetas (ContextHet) where allMetas f = allMetas f . map snd . unContextHet
 
 allMetas' :: (TermLike a, Monoid m) => (MetaId -> m) -> a -> m
 allMetas' singl = foldTerm metas
