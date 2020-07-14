@@ -290,11 +290,23 @@ instance PrettyTCM Modality where
     ]
 
 instance PrettyTCM ProblemConstraint where
-  prettyTCM (PConstr pids c) = prettyTCM c <?> prPids (Set.toList pids)
+  prettyTCM (PConstr pids unblock c) = prettyTCM c <?> parens (sep [blockedOn unblock, prPids (Set.toList pids)])
     where
       prPids []    = empty
-      prPids [pid] = parens $ "problem" <+> prettyTCM pid
-      prPids pids  = parens $ "problems" <+> fsep (punctuate "," $ map prettyTCM pids)
+      prPids [pid] = "problem" <+> prettyTCM pid
+      prPids pids  = "problems" <+> fsep (punctuate "," $ map prettyTCM pids)
+
+      comma | null pids = empty
+            | otherwise = ","
+
+      blockedOn (UnblockOnAll bs) | Set.null bs = empty
+      blockedOn (UnblockOnAny bs) | Set.null bs = "stuck" <> comma
+      blockedOn u = "blocked on" <+> (prettyTCM u <> comma)
+
+instance PrettyTCM Blocker where
+  prettyTCM (UnblockOnAll us) = "all" <> parens (fsep $ punctuate "," $ map prettyTCM $ Set.toList us)
+  prettyTCM (UnblockOnAny us) = "any" <> parens (fsep $ punctuate "," $ map prettyTCM $ Set.toList us)
+  prettyTCM (UnblockOnMeta m) = prettyTCM m
 
 instance (PrettyTCM a, Sing s, HetSideIsType s ~ 'True) => PrettyTCM (WithHet (Het s a)) where
   prettyTCM (WithHet tel a) = fmap (unHet @s) $ underHet @s tel prettyTCM a
@@ -354,9 +366,8 @@ instance PrettyTCM Constraint where
                 , cands
                 ]
           where
-            blk = case mb of
-                    Nothing -> empty
-                    Just b  -> parens $ "blocked on" <+> pretty b
+            blk | mb == alwaysUnblock = empty
+                | otherwise           = parens $ "blocked on" <+> pretty mb
             cands =
               case mcands of
                 Nothing -> "No candidates yet"
@@ -377,7 +388,7 @@ instance PrettyTCM Constraint where
         HasPTSRule a b -> "Has PTS rule:" <+> case b of
           NoAbs _ b -> prettyTCM (a,b)
           Abs x b   -> "(" <> (prettyTCM a <+> "," <+> addContext x (prettyTCM b)) <> ")"
-        UnquoteTactic _ v _ _ -> do
+        UnquoteTactic v _ _ -> do
           e <- reify v
           prettyTCM (A.App A.defaultAppInfo_ (A.Unquote A.exprNoRange) (defaultNamedArg e))
         CheckMetaInst x -> do
