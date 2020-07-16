@@ -6,7 +6,20 @@
 {-# LANGUAGE ViewPatterns               #-}
 {-# LANGUAGE TypeFamilies               #-}
 
-module Agda.TypeChecking.Conversion.ContextHet where
+module Agda.TypeChecking.Conversion.ContextHet
+  (TwinT,TwinT',TwinT''(..),
+   HetSideIsType,
+   twinAt,
+   HetSide(..),
+   Het(..),
+   ContextHet(..),
+   WithHet(..),
+   twinContextAt,
+   underHet,
+   underHet',
+   AddContextHet(..),
+   SingT(..))
+where
 
 import Data.Data (Data, Typeable)
 
@@ -69,18 +82,18 @@ twinAt TwinT{twinLHS,twinRHS,twinCompat} = case (sing :: SingT s) of
   SRHS    -> unHet @s $ twinRHS
   SCompat -> unHet @s $ twinCompat
 
-unTwinTCompat :: TwinT'' b a -> a
-unTwinTCompat (SingleT s) = unHet @'Both s
-unTwinTCompat (TwinT{twinCompat=s}) = unHet @'Compat s
+-- unTwinTCompat :: TwinT'' b a -> a
+-- unTwinTCompat (SingleT s) = unHet @'Both s
+-- unTwinTCompat (TwinT{twinCompat=s}) = unHet @'Compat s
+--
+-- pattern TwinTCompat :: a -> TwinT'' b a
+-- pattern TwinTCompat s <- (unTwinTCompat -> s)
+--   where
+--     TwinTCompat s = SingleT (Het @'Both s)
 
-pattern TwinTCompat :: a -> TwinT'' b a
-pattern TwinTCompat s <- (unTwinTCompat -> s)
-  where
-    TwinTCompat s = SingleT (Het @'Both s)
-
-#if __GLASGOW_HASKELL__ >= 802
-{-# COMPLETE TwinTCompat #-}
-#endif
+-- #if __GLASGOW_HASKELL__ >= 802
+-- {-# COMPLETE TwinTCompat #-}
+-- #endif
 
 -- We do not derive Traverse because we want to be careful when handling the "necessary" bit
 openTwinT :: TwinT'' Bool a -> TwinT'' () a
@@ -186,3 +199,7 @@ instance AddContextHet (String, Dom TwinT) where
 underHet :: forall s m a b. (MonadAddContext m, Sing s, HetSideIsType s ~ 'True) => ContextHet -> (a -> m b) -> Het s a -> m (Het s b)
 underHet ctx f = traverse (addContext (twinContextAt @s ctx) . f)
 
+underHet' :: forall s m a het. (MonadAddContext m, Sing s, HetSideIsType s ~ 'True) =>
+             SingT het -> If het ContextHet () -> m a -> m a
+underHet' STrue  ctx = addContext (twinContextAt @s ctx)
+underHet' SFalse ()  = id

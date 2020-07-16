@@ -1,6 +1,7 @@
 {-# LANGUAGE KindSignatures           #-}
 {-# LANGUAGE NondecreasingIndentation #-}
 {-# LANGUAGE TypeFamilies             #-}
+{-# LANGUAGE PartialTypeSignatures    #-}
 
 module Agda.TypeChecking.Conversion where
 
@@ -144,10 +145,17 @@ compareTerm cmp a u v = compareAs cmp (AsTermsOf a) u v
 compareAsHet :: forall m. MonadConversion m => Comparison -> ContextHet ->
                 Het 'Whole CompareAsHet -> Het 'LHS Term -> Het 'RHS Term -> m ()
 compareAsHet cmp tel a u v =
-  addContext (twinContextAt @'Compat tel) $
-    compareAs cmp (fmap unTwinTCompat $ unHet @'Whole $  a)
+    compareAs'' STrue tel (fromCmp cmp) (unHet @'Whole $ a)
                   (unHet @'LHS u)
                   (unHet @'RHS v)
+
+compareAs'' :: MonadConversion m => SingT het -> If het ContextHet () ->
+              CompareDirection ->
+              CompareAs' (If het TwinT Type) -> Term -> Term -> m ()
+compareAs'' SFalse () cmp a t1 t2 = dirToCmp (flip compareAs a) cmp t1 t2
+compareAs'' STrue  ctx cmp a t1 t2 =
+  addContext (twinContextAt @'Compat ctx) $
+    dirToCmp (flip compareAs' (fmap (twinAt @'Compat) a)) cmp t1 t2
 
 -- | Type directed equality on terms or types.
 compareAs :: forall m. MonadConversion m => Comparison -> CompareAs -> Term -> Term -> m ()
@@ -403,7 +411,7 @@ compareTel t1 t2 cmp tel1 tel2 =
     (EmptyTel, _)        -> bad
     (_, EmptyTel)        -> bad
     (ExtendTel dom1{-@(Dom i1 a1)-} tel1, ExtendTel dom2{-@(Dom i2 a2)-} tel2) -> do
-      compareDom SFalse () (fromCmp cmp) dom1 dom2 tel1 tel2 bad bad bad bad $
+      compareDom SFalse () (fromCmp cmp) dom1 dom2 tel1 tel2 bad bad bad bad $ \() ->
         compareTel t1 t2 cmp (absBody tel1) (absBody tel2)
   where
     -- Andreas, 2011-05-10 better report message about types
@@ -698,7 +706,7 @@ compareAtom cmp t m n =
                 [ "t1 =" <+> prettyTCM t1
                 , "t2 =" <+> prettyTCM t2
                 ]
-              compareDom SFalse () (flipCmp (fromCmp cmp)) dom1 dom2 b1 b2 errH errR errQ errC $
+              compareDom SFalse () (flipCmp (fromCmp cmp)) dom1 dom2 b1 b2 errH errR errQ errC $ \() ->
                 compareType cmp (absBody b1) (absBody b2)
             where
             errH = typeError $ UnequalHiding t1 t2
@@ -720,7 +728,7 @@ compareAtom cmp t m n =
   -> m ()
   -> m ()
   -> m ()
-  -> m ()
+  -> (() -> m ())
   -> m () #-}
 compareDom :: forall (het :: Bool) m c. (MonadConversion m , Free c)
   => SingT het
@@ -734,7 +742,7 @@ compareDom :: forall (het :: Bool) m c. (MonadConversion m , Free c)
   -> m ()     -- ^ Continuation if mismatch in 'Relevance'.
   -> m ()     -- ^ Continuation if mismatch in 'Quantity'.
   -> m ()     -- ^ Continuation if mismatch in 'Cohesion'.
-  -> If het (ContextHet -> m ()) (m ()) -- ^ Continuation if comparison is successful.
+  -> (If het ContextHet () -> m ()) -- ^ Continuation if comparison is successful.
   -> m ()
 compareDom hetuni ctx cmp0
   dom1@(Dom{domInfo = i1, unDom = a1})
@@ -750,7 +758,7 @@ compareDom hetuni ctx cmp0
       let r = max (getRelevance dom1) (getRelevance dom2)
               -- take "most irrelevant"
           dependent = (r /= Irrelevant) && dirToCmp (\_ _ b2 -> isBinderUsed b2) cmp b1 b2
-      pid <- newProblem_ $ dirToCmp compareType cmp0 a1 a2
+      pid <- newProblem_ $ compareType' hetuni ctx cmp0 a1 a2
       let a0 = dirToCmp (\_ a1 _ -> a1) cmp a1 a2
       (dom_a, dom) <- if dependent
              then (\ a -> (a, dom1 {unDom = a})) <$> blockTypeOnProblem a0 pid
@@ -769,7 +777,7 @@ compareDom hetuni ctx cmp0
                                   twinCompat = Het @'Compat dom_a,
                                   twinRHS    = Het @'RHS a2
                                  }}) cont
-        SFalse -> addContext (name, dom) $ cont
+        SFalse -> addContext (name, dom) $ cont ()
       stealConstraints pid
         -- Andreas, 2013-05-15 Now, comparison of codomains is not
         -- blocked any more by getting stuck on domains.
@@ -1100,20 +1108,41 @@ compareArgs pol for a v args1 args2 =
 -- * Types
 ---------------------------------------------------------------------------
 
+compareType :: (MonadConversion m)
+  => Comparison
+  -> Type
+  -> Type
+  -> m ()
+compareType = compareType' SFalse () . fromCmp
+
 -- | Equality on Types
-compareType :: MonadConversion m => Comparison -> Type -> Type -> m ()
-compareType cmp ty1@(El s1 a1) ty2@(El s2 a2) =
+compareType' :: forall het m. (MonadConversion m)
+  => SingT het
+  -> If het ContextHet ()
+  -> CompareDirection
+  -> Type
+  -> Type
+  -> m ()
+compareType' hetuni ctx cmp ty1@(El s1 a1) ty2@(El s2 a2) =
+    let uH' :: forall s m. (Sing s,
+                            HetSideIsType s ~ 'True,
+                            MonadConversion m) =>
+               SingT s -> m _ -> m _
+        uH' _ = underHet' @s hetuni ctx
+    in
     workOnTypes $
     verboseBracket "tc.conv.type" 20 "compareType" $ do
         reportSDoc "tc.conv.type" 50 $ vcat
-          [ "compareType" <+> sep [ prettyTCM ty1 <+> prettyTCM cmp
-                                       , prettyTCM ty2 ]
-          , hsep [ "   sorts:", prettyTCM s1, " and ", prettyTCM s2 ]
+          [ "compareType" <+> sep [ uH' SLHS (prettyTCM ty1) <+>
+                                    uH' SCompat (prettyTCM cmp)
+                                  , uH' SRHS (prettyTCM ty2) ]
+          , hsep [ "   sorts:", uH' SLHS (prettyTCM s1), " and ",
+                                uH' SRHS (prettyTCM s2) ]
           ]
-        compareAs cmp AsTypes a1 a2
+        compareAs'' hetuni ctx cmp AsTypes a1 a2
         unlessM ((optCumulativity <$> pragmaOptions) `or2M`
                  (not . optCompareSorts <$> pragmaOptions)) $
-          compareSort CmpEq s1 s2
+          uH' SCompat $ compareSort CmpEq s1 s2
         return ()
 
 leqType :: MonadConversion m => Type -> Type -> m ()
