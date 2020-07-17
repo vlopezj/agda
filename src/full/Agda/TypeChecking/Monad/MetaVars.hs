@@ -256,10 +256,12 @@ constraintMetas c = metas c
       ValueCmpHet _ tel t u v  -> return $ allMetas Set.singleton (tel, t, u, v)
       ValueCmpOnFace _ p t u v -> return $ allMetas Set.singleton (p, t, u, v)
       ElimCmp _ _ t u es es'   -> return $ allMetas Set.singleton (t, u, es, es')
+      ElimCmpHet ctx _ _ t es es'   -> return $ allMetas Set.singleton (ctx, t, es, es')
       LevelCmp _ l l'          -> return $ allMetas Set.singleton (Level l, Level l')
       UnquoteTactic t h g      -> return $ allMetas Set.singleton (t, h, g)
       Guarded c _              -> metas c
       TelCmp _ _ _ tel1 tel2   -> return $ allMetas Set.singleton (tel1, tel2)
+      TelCmpHet ctx _ _ _ tel1 tel2   -> return $ allMetas Set.singleton (ctx, tel1, tel2)
       SortCmp _ s1 s2          -> return $ allMetas Set.singleton (Sort s1, Sort s2)
       UnBlock x                -> Set.insert x . Set.unions <$> (mapM listenerMetas =<< getMetaListeners x)
       FindInstance{}           -> return mempty  -- v Ignore these constraints

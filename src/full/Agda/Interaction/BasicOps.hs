@@ -371,11 +371,14 @@ outputFormId (OutputForm _ _ o) = out o
       CmpInTypeHet _ _ _ i _     -> unHet @'H.LHS i
       CmpElim _ _ (i:_) _        -> i
       CmpElim _ _ [] _           -> __IMPOSSIBLE__
+      CmpElimHet _ _ _ (Het (i:_)) _     -> i
+      CmpElimHet _ _ _ (Het []) _        -> __IMPOSSIBLE__
       JustType i                 -> i
       CmpLevels _ i _            -> i
       CmpTypes _ i _             -> i
       CmpTypesHet _ _ i _        -> unHet @'H.LHS i
       CmpTeles _ i _             -> i
+      CmpTelesHet _ _ i _          -> unHet @'H.LHS i
       JustSort i                 -> i
       CmpSorts _ i _             -> i
       Guard o _                  -> out o
@@ -392,14 +395,18 @@ instance Reify ProblemConstraint (Closure (OutputForm A.Name Expr Expr)) where
   reify (PConstr pids unblock cl) = withClosure cl $ \ c ->
     OutputForm (getRange c) (Set.toList pids) <$> reify c
 
-reifyElimToExpr :: MonadReify m => I.Elim -> m Expr
-reifyElimToExpr e = case e of
+newtype ReifyElim = ReifyElim Elim
+instance Reify ReifyElim Expr where
+  reify (ReifyElim e) = case e of
     I.IApply _ _ v -> appl "iapply" <$> reify (defaultArg $ v) -- TODO Andrea: endpoints?
     I.Apply v -> appl "apply" <$> reify v
     I.Proj _o f -> appl "proj" <$> reify ((defaultArg $ I.Def f []) :: Arg Term)
-  where
-    appl :: Text -> Arg Expr -> Expr
-    appl s v = A.App defaultAppInfo_ (A.Lit empty (LitString s)) $ fmap unnamed v
+    where
+      appl :: Text -> Arg Expr -> Expr
+      appl s v = A.App defaultAppInfo_ (A.Lit empty (LitString s)) $ fmap unnamed v
+
+reifyElimToExpr :: (MonadReify m) => Elim -> m Expr
+reifyElimToExpr = reify . ReifyElim
 
 instance (Reify i a, Sing s, HetSideIsType s ~ 'True) => Reify (WithHet (Het s i)) (Het s a) where
     reify (WithHet tel a) = underHet @s tel reify a
@@ -438,8 +445,12 @@ instance Reify Constraint (OutputConstraint A.Name Expr Expr) where
     reify (ElimCmp cmp _ t v es1 es2) =
       CmpElim cmp <$> reify t <*> mapM reifyElimToExpr es1
                               <*> mapM reifyElimToExpr es2
+    reify (ElimCmpHet ctx cmp _ t es1 es2) =
+      CmpElimHet <$> reify ctx <*> pure cmp <*> reify (WithHet ctx (unHet @'Whole t)) <*> (sequence <$> (mapM (reify . WithHet ctx . fmap ReifyElim) (sequence$ fmap snd es1)))
+                                  <*> (sequence <$> (mapM (reify . WithHet ctx . fmap ReifyElim) (sequence$ fmap snd es2)))
     reify (LevelCmp cmp t t')    = CmpLevels cmp <$> reify t <*> reify t'
     reify (TelCmp a b cmp t t')  = CmpTeles cmp <$> (ETel <$> reify t) <*> (ETel <$> reify t')
+    reify (TelCmpHet ctx a b cmp t t')  = CmpTelesHet <$> reify ctx <*> pure cmp <*> (fmap ETel <$> reify (WithHet ctx t)) <*> (fmap ETel <$> reify (WithHet ctx t'))
     reify (SortCmp cmp s s')     = CmpSorts cmp <$> reify s <*> reify s'
     reify (Guarded c pid) = do
         o  <- reify c
@@ -512,12 +523,14 @@ instance (Pretty name, Pretty a, Pretty b) => Pretty (OutputConstraint name a b)
       JustType e           -> "Type" <+> pretty e
       JustSort e           -> "Sort" <+> pretty e
       CmpInType cmp t e e' -> pcmp cmp e e' .: t
-      CmpInTypeHet cmp tel t e e' -> pctx tel <+> "⊢" <+> pcmp cmp e e' .: t
+      CmpInTypeHet cmp tel t e e' -> tel .⊢ (pcmp cmp e e' .: t)
       CmpElim cmp t e e'   -> pcmp cmp e e' .: t
+      CmpElimHet ctx cmp t e e'   -> ctx .⊢ (pcmp cmp e e' .: t)
       CmpTypes  cmp t t'   -> pcmp cmp t t'
-      CmpTypesHet cmp tel t t' -> pctx tel <+> "⊢" <+> pcmp cmp t t'
+      CmpTypesHet cmp tel t t' -> tel .⊢ (pcmp cmp t t')
       CmpLevels cmp t t'   -> pcmp cmp t t'
       CmpTeles  cmp t t'   -> pcmp cmp t t'
+      CmpTelesHet ctx  cmp t t'   -> ctx .⊢ pcmp cmp t t'
       CmpSorts cmp s s'    -> pcmp cmp s s'
       Guard o pid          -> pretty o <?> parens ("blocked by problem" <+> pretty pid)
       Assign m e           -> bin (pretty m) ":=" (pretty e)
@@ -537,6 +550,7 @@ instance (Pretty name, Pretty a, Pretty b) => Pretty (OutputConstraint name a b)
       bin a op b = sep [a, nest 2 $ op <+> b]
       pcmp cmp a b = bin (pretty a) (pretty cmp) (pretty b)
       val .: ty = bin val ":" (pretty ty)
+      ctx .⊢ a  = bin (pctx ctx) "⊢" a
       pctx a = fsep (punctuate "," $ map (\(name, v) ->
                                             bin (pretty name) ":" (pretty v)) a)
 
@@ -571,6 +585,11 @@ instance (name ~ A.Name, name' ~ C.Name,
                               <*> traverse @(Het 'H.RHS) (toConcreteCtx TopCtx) e'
     toConcrete (CmpElim cmp t e e') =
       CmpElim cmp <$> toConcreteCtx TopCtx t <*> toConcreteCtx TopCtx e <*> toConcreteCtx TopCtx e'
+    toConcrete (CmpElimHet ctx cmp t e e') =
+      toConcreteContextHet ctx $ \ctx' ->
+        CmpElimHet ctx' cmp <$> toConcreteCtx TopCtx t
+                            <*> traverse @(Het 'H.LHS) (toConcreteCtx TopCtx) e
+                            <*> traverse @(Het 'H.RHS) (toConcreteCtx TopCtx) e'
     toConcrete (CmpTypes cmp e e') = CmpTypes cmp <$> toConcreteCtx TopCtx e
                                                   <*> toConcreteCtx TopCtx e'
     toConcrete (CmpTypesHet cmp ctx e e') =
@@ -580,6 +599,9 @@ instance (name ~ A.Name, name' ~ C.Name,
     toConcrete (CmpLevels cmp e e') = CmpLevels cmp <$> toConcreteCtx TopCtx e
                                                     <*> toConcreteCtx TopCtx e'
     toConcrete (CmpTeles cmp e e') = CmpTeles cmp <$> toConcrete e <*> toConcrete e'
+    toConcrete (CmpTelesHet ctx cmp e e') =
+      toConcreteContextHet ctx $ \ctx' ->
+        CmpTelesHet ctx' cmp <$> traverse @(Het 'H.LHS) toConcrete e <*> traverse @(Het 'H.RHS) toConcrete e'
     toConcrete (CmpSorts cmp e e') = CmpSorts cmp <$> toConcreteCtx TopCtx e
                                                   <*> toConcreteCtx TopCtx e'
     toConcrete (Guard o pid) = Guard <$> toConcrete o <*> pure pid
@@ -654,8 +676,10 @@ getConstraintsMentioning norm m = getConstrs instantiateBlockingFull (mentionsMe
         ValueCmpOnFace cmp p t u v -> isMeta u `mplus` isMeta v
         -- TODO: extend to other comparisons?
         ElimCmp cmp fs t v as bs   -> Nothing
+        ElimCmpHet ctx cmp fs t as bs   -> Nothing
         LevelCmp cmp u v           -> Nothing
         TelCmp a b cmp tela telb   -> Nothing
+        TelCmpHet ctx a b cmp tela telb   -> Nothing
         SortCmp cmp a b            -> Nothing
         Guarded c pid              -> hasHeadMeta c
         UnBlock{}                  -> Nothing

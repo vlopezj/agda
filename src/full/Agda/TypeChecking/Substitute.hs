@@ -967,7 +967,13 @@ instance Subst Term Constraint where
                                     (rft @'Whole n a) (rft @'LHS n u) (rft @'RHS n v)
     ValueCmpOnFace cmp p t u v -> ValueCmpOnFace cmp (rf p) (rf t) (rf u) (rf v)
     ElimCmp ps fs a v e1 e2  -> ElimCmp ps fs (rf a) (rf v) (rf e1) (rf e2)
+    ElimCmpHet ctx ps fs a e1 e2  ->
+      let n = size ctx in
+      ElimCmpHet (rf ctx) ps fs (rft @'Whole n a) (rft @'LHS n e1) (rft @'RHS n e2)
     TelCmp a b cmp tel1 tel2 -> TelCmp (rf a) (rf b) cmp (rf tel1) (rf tel2)
+    TelCmpHet ctx a b cmp tel1 tel2 ->
+      let n = size ctx in
+      TelCmpHet (rf ctx) (rft @'LHS n a) (rft @'RHS n b) cmp (rft @'LHS n tel1) (rft @'RHS n tel2)
     SortCmp cmp s1 s2        -> SortCmp cmp (rf s1) (rf s2)
     LevelCmp cmp l1 l2       -> LevelCmp cmp (rf l1) (rf l2)
     Guarded c cs             -> Guarded (rf c) cs

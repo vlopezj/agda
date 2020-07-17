@@ -404,18 +404,49 @@ compareTerm' cmp a m n =
 --   not.
 compareTel :: MonadConversion m => Type -> Type ->
   Comparison -> Telescope -> Telescope -> m ()
-compareTel t1 t2 cmp tel1 tel2 =
+compareTel = compareTel' SFalse ()
+
+compareTelHet :: (MonadConversion m) =>
+  ContextHet ->
+  Het 'LHS Type ->
+  Het 'RHS Type ->
+  Comparison ->
+  Het 'LHS Telescope ->
+  Het 'RHS Telescope ->
+  m ()
+compareTelHet = compareTel' STrue
+
+compareTel' :: forall het m. (MonadConversion m, Sing het) => SingT het ->
+  If het ContextHet () ->
+  If het (Het 'LHS Type) Type ->
+  If het (Het 'RHS Type) Type ->
+  Comparison ->
+  If het (Het 'LHS Telescope) Telescope ->
+  If het (Het 'RHS Telescope) Telescope ->
+  m ()
+compareTel' hetuni ctx t1 t2 cmp tel1 tel2 =
   verboseBracket "tc.conv.tel" 20 "compareTel" $
-  catchConstraint (TelCmp t1 t2 cmp tel1 tel2) $ case (tel1, tel2) of
+  catchConstraint (cTelCmp hetuni ctx t1 t2 cmp tel1 tel2) $ case (unHet_ @het @'LHS tel1, unHet_ @het @'RHS tel2) of
     (EmptyTel, EmptyTel) -> return ()
     (EmptyTel, _)        -> bad
     (_, EmptyTel)        -> bad
     (ExtendTel dom1{-@(Dom i1 a1)-} tel1, ExtendTel dom2{-@(Dom i2 a2)-} tel2) -> do
-      compareDom SFalse () (fromCmp cmp) dom1 dom2 tel1 tel2 bad bad bad bad $ \() ->
-        compareTel t1 t2 cmp (absBody tel1) (absBody tel2)
+      compareDom hetuni ctx (fromCmp cmp) dom1 dom2 tel1 tel2 bad bad bad bad $ \ctx' ->
+        compareTel' hetuni ctx' t1 t2 cmp (mkHet_ @het @'LHS$ absBody tel1) (mkHet_ @het @'RHS$ absBody tel2)
   where
+    cTelCmp :: SingT het ->
+      If het ContextHet () ->
+      If het (Het 'LHS Type) Type ->
+      If het (Het 'RHS Type) Type ->
+      Comparison ->
+      If het (Het 'LHS Telescope) Telescope ->
+      If het (Het 'RHS Telescope) Telescope ->
+      Constraint
+    cTelCmp SFalse = \() -> TelCmp
+    cTelCmp STrue  = TelCmpHet
     -- Andreas, 2011-05-10 better report message about types
-    bad = typeError $ UnequalTypes cmp t2 t1
+    -- Victor, 2020-07-16 TODO: Put types in the appropriate context, e.g. as a Π-type
+    bad = typeError $ UnequalTypes cmp (unHet_ @het @'RHS t2) (unHet_ @het @'LHS t1)
       -- switch t2 and t1 because of contravariance!
 
 compareAtomDir :: MonadConversion m => CompareDirection -> CompareAs -> Term -> Term -> m ()

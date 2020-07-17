@@ -1027,7 +1027,9 @@ data Constraint
   | ValueCmpHet Comparison ContextHet (Het 'Whole CompareAsHet) (Het 'LHS Term) (Het 'RHS Term)
   | ValueCmpOnFace Comparison Term Type Term Term
   | ElimCmp [Polarity] [IsForced] Type Term [Elim] [Elim]
+  | ElimCmpHet ContextHet [Polarity] [IsForced] (Het 'Whole TwinT) (Het 'LHS (Term, [Elim])) (Het 'RHS (Term, [Elim]))
   | TelCmp Type Type Comparison Telescope Telescope -- ^ the two types are for the error message only
+  | TelCmpHet ContextHet (Het 'LHS Type) (Het 'RHS Type) Comparison (Het 'LHS Telescope) (Het 'RHS Telescope) -- ^ the two types are for the error message only
   | SortCmp Comparison Sort Sort
   | LevelCmp Comparison Level Level
 --  | ShortCut MetaId Term Type
@@ -1073,7 +1075,11 @@ instance Free Constraint where
                                         (freeVars' (unHet @'Whole t, (unHet @'LHS u, unHet @'RHS v)))
       ValueCmpOnFace _ p t u v -> freeVars' (p, (t, (u, v)))
       ElimCmp _ _ t u es es'  -> freeVars' ((t, u), (es, es'))
+      ElimCmpHet ctx _ _ t es es'  -> freeVars' ctx <> underBinder' (size ctx)
+                                        (freeVars' (unHet @'Whole t, (unHet @'LHS es, unHet @'RHS es')))
       TelCmp _ _ _ tel tel' -> freeVars' (tel, tel')
+      TelCmpHet ctx _ _ _ tel tel' -> freeVars' ctx <>
+                                        underBinder' (size ctx) (freeVars' (unHet @'LHS tel, unHet @'RHS tel'))
       SortCmp _ s s'        -> freeVars' (s, s')
       LevelCmp _ l l'       -> freeVars' (l, l')
       UnBlock _             -> mempty
@@ -1093,12 +1099,14 @@ instance TermLike Constraint where
       ValueCmpHet _ tel t u v  -> foldTerm f (tel, t, u, v)
       ValueCmpOnFace _ p t u v -> foldTerm f (p, t, u, v)
       ElimCmp _ _ t u es es' -> foldTerm f (t, u, es, es')
+      ElimCmpHet ctx _ _ t es es' -> foldTerm f (ctx, unHet @'Whole t, unHet @'LHS es, unHet @'RHS es')
       LevelCmp _ l l'        -> foldTerm f (Level l, Level l')  -- Note wrapping as term, to ensure f gets to act on l and l'
       IsEmpty _ t            -> foldTerm f t
       CheckSizeLtSat u       -> foldTerm f u
       UnquoteTactic t h g    -> foldTerm f (t, h, g)
       Guarded c _            -> foldTerm f c
       TelCmp _ _ _ tel1 tel2 -> foldTerm f (tel1, tel2)
+      TelCmpHet ctx _ _ _ tel1 tel2 -> foldTerm f (ctx, tel1, tel2)
       SortCmp _ s1 s2        -> foldTerm f (Sort s1, Sort s2)   -- Same as LevelCmp case
       UnBlock _              -> mempty
       FindInstance _ _ _     -> mempty

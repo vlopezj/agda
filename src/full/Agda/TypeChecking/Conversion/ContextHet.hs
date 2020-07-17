@@ -18,10 +18,13 @@ module Agda.TypeChecking.Conversion.ContextHet
    underHet,
    underHet',
    AddContextHet(..),
-   SingT(..))
+   SingT(..),
+   mkHet_, unHet_,
+   commuteHet)
 where
 
 import Data.Data (Data, Typeable)
+import Data.Coerce
 
 import Agda.Syntax.Abstract.Name
 import Agda.Syntax.Concrete.Name (NameInScope(..), LensInScope(..), nameRoot, nameToRawName)
@@ -203,3 +206,17 @@ underHet' :: forall s m a het. (MonadAddContext m, Sing s, HetSideIsType s ~ 'Tr
              SingT het -> If het ContextHet () -> m a -> m a
 underHet' STrue  ctx = addContext (twinContextAt @s ctx)
 underHet' SFalse ()  = id
+
+mkHet_ :: forall het s a. (Sing het) => a -> If het (Het s a) a
+mkHet_ = case sing :: SingT het of
+  STrue -> Het
+  SFalse -> id
+
+unHet_ :: forall het s a. (Sing het) => If het (Het s a) a -> a
+unHet_ = case sing :: SingT het of
+  STrue  -> unHet
+  SFalse -> id
+
+
+commuteHet :: (Coercible (f a) (f (Het s a))) => Het s (f a) -> f (Het s a)
+commuteHet = coerce . unHet

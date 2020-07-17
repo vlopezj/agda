@@ -16,7 +16,7 @@ import           Data.Maybe                   (listToMaybe)
 
 import {-# SOURCE #-} Agda.TypeChecking.Monad.Base
   (HighlightingLevel, HighlightingMethod, TCM, ProblemId, Comparison, Polarity)
-import {-# SOURCE #-} Agda.TypeChecking.Conversion.ContextHet (TwinT', Het, HetSide(..))
+import {-# SOURCE #-} Agda.TypeChecking.Conversion.ContextHet (TwinT', Het, HetSide(..), ContextHet)
 
 import           Agda.Syntax.Abstract         (QName)
 import           Agda.Syntax.Common           (InteractionId (..), Arg)
@@ -442,11 +442,13 @@ type OutputContextHet c a = [(c, Arg (TwinT' a))]
 data OutputConstraint c a b
       = OfType b a | CmpInType Comparison a b b
                    | CmpElim [Polarity] a [b] [b]
+                   | CmpElimHet (OutputContextHet c a) [Polarity] (TwinT' a) (Het 'LHS [b]) (Het 'RHS [b])
                    | CmpInTypeHet Comparison (OutputContextHet c a) (TwinT' a) (Het 'LHS b) (Het 'RHS b)
       | JustType b | CmpTypes Comparison b b
                    | CmpTypesHet Comparison (OutputContextHet c a) (Het 'LHS b) (Het 'RHS b)
                    | CmpLevels Comparison b b
                    | CmpTeles Comparison b b
+                   | CmpTelesHet (OutputContextHet c a) Comparison (Het 'LHS b) (Het 'RHS b)
       | JustSort b | CmpSorts Comparison b b
       | Guard (OutputConstraint c a b) ProblemId
       | Assign b a | TypedAssign b a a | PostponedCheckArgs b [a] a a

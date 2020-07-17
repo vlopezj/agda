@@ -229,8 +229,12 @@ instance Instantiate Constraint where
     return $ ValueCmpOnFace cmp p t u v
   instantiate' (ElimCmp cmp fs t v as bs) =
     ElimCmp cmp fs <$> instantiate' t <*> instantiate' v <*> instantiate' as <*> instantiate' bs
+  instantiate' (ElimCmpHet ctx cmp fs t as bs) =
+    ElimCmpHet <$> instantiate' ctx <*> pure cmp <*> pure fs <*> instantiate' t <*> instantiate' as <*> instantiate' bs
   instantiate' (LevelCmp cmp u v)   = uncurry (LevelCmp cmp) <$> instantiate' (u,v)
   instantiate' (TelCmp a b cmp tela telb) = uncurry (TelCmp a b cmp)  <$> instantiate' (tela,telb)
+  instantiate' (TelCmpHet ctx a b cmp tela telb) =
+    TelCmpHet <$> instantiate' ctx <*> pure a <*> pure b <*> pure cmp <*> instantiate' tela <*> instantiate' telb
   instantiate' (SortCmp cmp a b)    = uncurry (SortCmp cmp) <$> instantiate' (a,b)
   instantiate' (Guarded c pid)      = Guarded <$> instantiate' c <*> pure pid
   instantiate' (UnBlock m)          = return $ UnBlock m
@@ -847,6 +851,8 @@ instance ReduceHet TwinT where
     twinCompat <- underHet @'Compat tel reduce' twinCompat
     return TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}
 
+instance {-# OVERLAPPING #-} ReduceHet a => ReduceHet (Het 'Whole a)
+
 -- 2020-07-07 TODO Make more efficient, or give up on names altogether
 -- instance ReduceHet ContextHet where
 --   reduceHet' env = go (telToList env)
@@ -873,9 +879,9 @@ instance Reduce Constraint where
     (t,u,v) <- reduce' (t,u,v)
     return $ ValueCmp cmp t u v
   reduce' (ValueCmpHet cmp tel t u v) = do
-    -- 2020-07-07 TODO <victor> Should one reduce the telescope?
+    -- 2020-07-07 TODO <victor> Should one actually reduce the heterogeneous context?
     tel <- reduce' tel
-    t' <- traverse (reduceHet' tel) t
+    t' <- reduceHet' tel t
     u' <- reduceHet' tel u
     v' <- reduceHet' tel v
     return $ ValueCmpHet cmp tel t' u' v'
@@ -884,8 +890,12 @@ instance Reduce Constraint where
     return $ ValueCmpOnFace cmp p t u v
   reduce' (ElimCmp cmp fs t v as bs) =
     ElimCmp cmp fs <$> reduce' t <*> reduce' v <*> reduce' as <*> reduce' bs
+  reduce' (ElimCmpHet ctx cmp fs t as bs) =
+    ElimCmpHet <$> reduce' ctx <*> pure cmp <*> pure fs <*> reduceHet' ctx t <*>  reduceHet' ctx as <*> reduceHet' ctx bs
   reduce' (LevelCmp cmp u v)    = uncurry (LevelCmp cmp) <$> reduce' (u,v)
   reduce' (TelCmp a b cmp tela telb) = uncurry (TelCmp a b cmp)  <$> reduce' (tela,telb)
+  reduce' (TelCmpHet ctx a b cmp tela telb) =
+    TelCmpHet <$> reduce' ctx <*> pure a <*> pure b <*> pure cmp <*> reduceHet' ctx tela <*> reduceHet' ctx telb
   reduce' (SortCmp cmp a b)     = uncurry (SortCmp cmp) <$> reduce' (a,b)
   reduce' (Guarded c pid)       = Guarded <$> reduce' c <*> pure pid
   reduce' (UnBlock m)           = return $ UnBlock m
@@ -1072,6 +1082,9 @@ instance SimplifyHet a => SimplifyHet (CompareAs' a)
 instance (Sing s, HetSideIsType s ~ 'True, Simplify a) => SimplifyHet (Het s a) where
   simplifyHet' tel a = underHet @s tel simplify' a
 
+-- This is not actually overlapping, as HetSideIsType 'Whole ~ 'False, but GHC can't tell
+instance {-# OVERLAPPING #-} SimplifyHet a => SimplifyHet (Het 'Whole a)
+
 instance Simplify ContextHet where
   simplify' = fmap ContextHet . go [] . unContextHet
     where
@@ -1083,7 +1096,7 @@ instance Simplify Constraint where
     (t,u,v) <- simplify' (t,u,v)
     return $ ValueCmp cmp t u v
   simplify' (ValueCmpHet cmp tel t u v) = do
-    -- 2020-07-07 TODO <victor> Should one simplify the telescope?
+    -- 2020-07-07 TODO <victor> Should one actually simplify the heterogeneous context?
     tel <- simplify' tel
     t' <- traverse (simplifyHet' tel) t
     u' <- simplifyHet' tel u
@@ -1094,8 +1107,12 @@ instance Simplify Constraint where
     return $ ValueCmp cmp (AsTermsOf t) u v
   simplify' (ElimCmp cmp fs t v as bs) =
     ElimCmp cmp fs <$> simplify' t <*> simplify' v <*> simplify' as <*> simplify' bs
+  simplify' (ElimCmpHet ctx cmp fs t as bs) =
+    ElimCmpHet <$> simplify' ctx <*> pure cmp <*> pure fs <*> simplifyHet' ctx t <*> simplifyHet' ctx as <*> simplifyHet' ctx bs
   simplify' (LevelCmp cmp u v)    = uncurry (LevelCmp cmp) <$> simplify' (u,v)
   simplify' (TelCmp a b cmp tela telb) = uncurry (TelCmp a b cmp) <$> simplify' (tela,telb)
+  simplify' (TelCmpHet ctx a b cmp tela telb) =
+    TelCmpHet <$> simplify' ctx <*> pure a <*> pure b <*> pure cmp <*> simplifyHet' ctx tela <*> simplifyHet' ctx telb
   simplify' (SortCmp cmp a b)     = uncurry (SortCmp cmp) <$> simplify' (a,b)
   simplify' (Guarded c pid)       = Guarded <$> simplify' c <*> pure pid
   simplify' (UnBlock m)           = return $ UnBlock m
@@ -1298,6 +1315,8 @@ instance NormaliseHet a => NormaliseHet (CompareAs' a)
 instance (Sing s, HetSideIsType s ~ 'True, Normalise a) => NormaliseHet (Het s a) where
   normaliseHet' tel a = underHet @s tel normalise' a
 
+instance {-# OVERLAPPING #-} (NormaliseHet a) => NormaliseHet (Het 'Whole a)
+
 instance Normalise ContextHet where
   normalise' = fmap ContextHet . go [] . unContextHet
     where
@@ -1309,9 +1328,9 @@ instance Normalise Constraint where
     (t,u,v) <- normalise' (t,u,v)
     return $ ValueCmp cmp t u v
   normalise' (ValueCmpHet cmp tel t u v) = do
-    -- 2020-07-07 TODO <victor> Should one normalise the telescope?
+    -- 2020-07-07 TODO <victor> Should one normalise the heterogeneous context?
     tel <- normalise' tel
-    t' <- traverse (normaliseHet' tel) t
+    t' <- normaliseHet' tel t
     u' <- normaliseHet' tel u
     v' <- normaliseHet' tel v
     return $ ValueCmpHet cmp tel t' u' v'
@@ -1320,8 +1339,13 @@ instance Normalise Constraint where
     return $ ValueCmpOnFace cmp p t u v
   normalise' (ElimCmp cmp fs t v as bs) =
     ElimCmp cmp fs <$> normalise' t <*> normalise' v <*> normalise' as <*> normalise' bs
+  normalise' (ElimCmpHet ctx cmp fs t as bs) =
+    ElimCmpHet <$> normalise' ctx <*>
+      pure cmp <*> pure fs <*> normaliseHet' ctx t <*> normaliseHet' ctx as <*> normaliseHet' ctx bs
   normalise' (LevelCmp cmp u v)    = uncurry (LevelCmp cmp) <$> normalise' (u,v)
   normalise' (TelCmp a b cmp tela telb) = uncurry (TelCmp a b cmp) <$> normalise' (tela,telb)
+  normalise' (TelCmpHet ctx a b cmp tela telb) =
+    TelCmpHet <$> normalise' ctx <*> pure a <*> pure b <*> pure cmp <*> normaliseHet' ctx tela <*> normaliseHet' ctx telb
   normalise' (SortCmp cmp a b)     = uncurry (SortCmp cmp) <$> normalise' (a,b)
   normalise' (Guarded c pid)       = Guarded <$> normalise' c <*> pure pid
   normalise' (UnBlock m)           = return $ UnBlock m
@@ -1549,6 +1573,8 @@ instance InstantiateFullHet TwinT where
     twinCompat <- underHet @'Compat tel instantiateFull' twinCompat
     return TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}
 
+instance {-# OVERLAPPING #-} InstantiateFullHet a => InstantiateFullHet (Het 'Whole a)
+
 -- 2020-07-07 TODO Make more efficient, or give up on names altogether
 -- instance InstantiateFullHet ContextHet where
 --   instantiateFullHet' env = go (telToList env)
@@ -1578,7 +1604,7 @@ instance InstantiateFull Constraint where
     ValueCmpHet cmp tel t u v -> do
       -- 2020-07-07 TODO <victor> Should one reduce the telescope?
       tel <- instantiateFull' tel
-      t' <- traverse (instantiateFullHet' tel) t
+      t' <- instantiateFullHet' tel t
       u' <- instantiateFullHet' tel u
       v' <- instantiateFullHet' tel v
       return $ ValueCmpHet cmp tel t' u' v'
@@ -1587,8 +1613,14 @@ instance InstantiateFull Constraint where
       return $ ValueCmpOnFace cmp p t u v
     ElimCmp cmp fs t v as bs ->
       ElimCmp cmp fs <$> instantiateFull' t <*> instantiateFull' v <*> instantiateFull' as <*> instantiateFull' bs
+    ElimCmpHet ctx cmp fs t as bs ->
+      ElimCmpHet <$> instantiateFull' ctx <*>
+        pure cmp <*> pure fs <*> instantiateFullHet' ctx t <*> instantiateFullHet' ctx as <*> instantiateFullHet' ctx bs
     LevelCmp cmp u v    -> uncurry (LevelCmp cmp) <$> instantiateFull' (u,v)
     TelCmp a b cmp tela telb -> uncurry (TelCmp a b cmp) <$> instantiateFull' (tela,telb)
+    TelCmpHet ctx a b cmp tela telb ->
+      TelCmpHet <$> instantiateFull' ctx <*>
+        pure a <*> pure b <*> pure cmp <*> instantiateFullHet' ctx tela <*> instantiateFullHet' ctx telb
     SortCmp cmp a b     -> uncurry (SortCmp cmp) <$> instantiateFull' (a,b)
     Guarded c pid       -> Guarded <$> instantiateFull' c <*> pure pid
     UnBlock m           -> return $ UnBlock m

@@ -312,6 +312,9 @@ instance PrettyTCM Blocker where
 instance (PrettyTCM a, Sing s, HetSideIsType s ~ 'True) => PrettyTCM (WithHet (Het s a)) where
   prettyTCM (WithHet tel a) = fmap (unHet @s) $ underHet @s tel prettyTCM a
 
+instance {-# OVERLAPPING #-} (PrettyTCM (WithHet a)) => PrettyTCM (WithHet (Het 'Whole a)) where
+  prettyTCM (WithHet tel a) = prettyTCM $ WithHet tel $ unHet @'Whole a
+
 instance PrettyTCM ContextHet where
   prettyTCM :: forall m. MonadPretty m => ContextHet -> m Doc
   prettyTCM = fmap P.fsep . sequence . go [] . unContextHet
@@ -326,17 +329,24 @@ instance PrettyTCM Constraint where
     prettyTCM c = case c of
         ValueCmp cmp ty s t -> prettyCmp (prettyTCM cmp) s t <?> prettyTCM ty
         ValueCmpHet cmp tel ty s t ->
-          sep [ prettyTCM tel <+> "⊢"
-              , prettyCmp (prettyTCM cmp) (WithHet tel s) (WithHet tel t) <?>
-                prettyTCM (WithHet tel (unHet @'Whole ty))
-              ]
+          prettyTCMWithCtx tel $
+            sep [ prettyCmp (prettyTCM cmp) (WithHet tel s) (WithHet tel t) <?>
+                  prettyTCM (WithHet tel (unHet @'Whole ty))
+                ]
         ValueCmpOnFace cmp p ty s t ->
             sep [ prettyTCM p <+> "|"
                 , prettyCmp (prettyTCM cmp) s t ]
             <?> (":" <+> prettyTCMCtx TopCtx ty)
         ElimCmp cmps fs t v us vs -> prettyCmp "~~" us vs   <?> (":" <+> prettyTCMCtx TopCtx t)
+        ElimCmpHet ctx cmps fs t us vs ->
+          prettyTCMWithCtx ctx $
+            prettyCmp "~~" (WithHet ctx (fmap snd us)) (WithHet ctx (fmap snd vs))
+              <?> (":" <+> prettyTCM (WithHet ctx t))
         LevelCmp cmp a b         -> prettyCmp (prettyTCM cmp) a b
         TelCmp a b cmp tela telb -> prettyCmp (prettyTCM cmp) tela telb
+        TelCmpHet ctx a b cmp tela telb ->
+          prettyTCMWithCtx ctx $
+            prettyCmp (prettyTCM cmp) (WithHet ctx tela) (WithHet ctx telb)
         SortCmp cmp s1 s2        -> prettyCmp (prettyTCM cmp) s1 s2
         Guarded c pid            -> prettyTCM c <?> parens ("blocked by problem" <+> prettyTCM pid)
         UnBlock m   -> do
@@ -403,6 +413,8 @@ instance PrettyTCM Constraint where
           :: (PrettyTCM a, PrettyTCM b, MonadPretty m)
           => m Doc -> a -> b -> m Doc
         prettyCmp cmp x y = prettyTCMCtx TopCtx x <?> (cmp <+> prettyTCMCtx TopCtx y)
+
+        prettyTCMWithCtx tel m = prettyTCM tel <+> "⊢" <+> m
 
 
 instance PrettyTCM a => PrettyTCM (WithHet (TwinT' a)) where

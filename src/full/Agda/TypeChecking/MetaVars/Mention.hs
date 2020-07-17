@@ -108,13 +108,19 @@ instance MentionsMeta a => MentionsMeta (Het s a) where
   mentionsMetas xs = mentionsMetas xs . unHet
 
 instance MentionsMeta Constraint where
+  -- TODO: victor 2020-07-16:
+  -- Should the context be part of the mentions meta, or
+  -- should we wake up the constraints based on the terms instead;
+  -- and perhaps have an additional constraint for blocked instantiations?
   mentionsMetas xs c = case c of
     ValueCmp _ t u v    -> mm (t, u, v)
-    ValueCmpHet _ tel t u v -> mm (tel, (t, u, v))
+    ValueCmpHet _ tel t u v -> mm (t, u, v)
     ValueCmpOnFace _ p t u v    -> mm ((p,t), u, v)
     ElimCmp _ _ t v as bs -> mm ((t, v), (as, bs))
+    ElimCmpHet ctx _ _ t as bs -> mm (t, (as, bs))
     LevelCmp _ u v      -> mm (u, v)
     TelCmp a b _ u v    -> mm ((a, b), (u, v))
+    TelCmpHet ctx _ _ _ u v    -> mm (u, v)
     SortCmp _ a b       -> mm (a, b)
     Guarded{}           -> False  -- This gets woken up when the problem it's guarded by is solved
     UnBlock _           -> True   -- this might be a postponed typechecking

@@ -178,6 +178,12 @@ encodeOC f encodePrettyTCM = \case
   , "type"           #= encodePrettyTCM a
   , "constraintObjs" @= map (map f) [is, js]
   ]
+ CmpElimHet ctx ps a is js -> kind "CmpElim"
+  [ "polarities"     @= map encodeShow ps
+  , "context"        #= encodeContextHet encodePrettyTCM ctx
+  , "type"           #= encodeTwinT encodePrettyTCM a
+  , "constraintObjs" @= map (map f) [unHet @'LHS is, unHet @'RHS js]
+  ]
  JustType a -> kind "JustType"
   [ "constraintObj"  @= f a
   ]
@@ -189,6 +195,7 @@ encodeOC f encodePrettyTCM = \case
                              c ctx (unHet @'LHS i) (unHet @'RHS j) "CmpTypesHet"
  CmpLevels c i j -> encodeOCCmp f c i j "CmpLevels"
  CmpTeles  c i j -> encodeOCCmp f c i j "CmpTeles"
+ CmpTelesHet ctx c i j -> encodeOCCmpHet encodePrettyTCM f c ctx (unHet @'LHS i) (unHet @'RHS j) "CmpTelesHet"
  CmpSorts  c i j -> encodeOCCmp f c i j "CmpSorts"
  Guard oc a -> kind "Guard"
   [ "constraint"     #= encodeOC f encodePrettyTCM oc
