@@ -737,8 +737,9 @@ compareAtom cmp t m n =
                 [ "t1 =" <+> prettyTCM t1
                 , "t2 =" <+> prettyTCM t2
                 ]
-              compareDom SFalse () (flipCmp (fromCmp cmp)) dom1 dom2 b1 b2 errH errR errQ errC $ \() ->
-                compareType cmp (absBody b1) (absBody b2)
+              maybeInContextHet $ \hetuni ctx ->
+                compareDom hetuni ctx (flipCmp (fromCmp cmp)) dom1 dom2 b1 b2 errH errR errQ errC $ \ctx' ->
+                  compareType' hetuni ctx' (fromCmp cmp) (absBody b1) (absBody b2)
             where
             errH = typeError $ UnequalHiding t1 t2
             errR = typeError $ UnequalRelevance cmp t1 t2
@@ -1163,6 +1164,7 @@ compareType' hetuni ctx cmp ty1@(El s1 a1) ty2@(El s2 a2) =
     in
     workOnTypes $
     verboseBracket "tc.conv.type" 20 "compareType" $ do
+        -- TODO: <victor> 2020-07-17 Print context
         reportSDoc "tc.conv.type" 50 $ vcat
           [ "compareType" <+> sep [ uH' SLHS (prettyTCM ty1) <+>
                                     uH' SCompat (prettyTCM cmp)

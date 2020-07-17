@@ -319,7 +319,7 @@ defaultPragmaOptions = PragmaOptions
   , optConfluenceCheck           = Nothing
   , optFlatSplit                 = True
   , optImportSorts               = True
-  , optHeterogeneousUnification  = False
+  , optHeterogeneousUnification  = True
   }
 
 -- | The default termination depth.
@@ -890,6 +890,9 @@ noImportSorts o = return $ o { optImportSorts = False }
 heterogeneousUnificationFlag :: Flag PragmaOptions
 heterogeneousUnificationFlag o = return $ o { optHeterogeneousUnification = True }
 
+noHeterogeneousUnificationFlag :: Flag PragmaOptions
+noHeterogeneousUnificationFlag o = return $ o { optHeterogeneousUnification = False }
+
 integerArgument :: String -> String -> OptM Int
 integerArgument flag s = maybe usage return $ readMaybe s
   where
@@ -1122,7 +1125,9 @@ pragmaOptions =
     , Option []     ["no-import-sorts"] (NoArg noImportSorts)
                     "disable the implicit import of Agda.Primitive using (Set; Prop) at the start of each top-level module"
     , Option []     ["heterogeneous-unification"] (NoArg heterogeneousUnificationFlag)
-                    "use heterogeneous unification; hopefully slower but smaller chance of internal errors"
+                    "use heterogeneous unification; slower but hopefully smaller chance of internal errors (default)"
+    , Option []     ["no-heterogeneous-unification"] (NoArg noHeterogeneousUnificationFlag)
+                    "disable heterogeneous unification"
    ]
 
 -- | Pragma options of previous versions of Agda.

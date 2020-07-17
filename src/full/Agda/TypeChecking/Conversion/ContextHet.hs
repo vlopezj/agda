@@ -20,7 +20,8 @@ module Agda.TypeChecking.Conversion.ContextHet
    AddContextHet(..),
    SingT(..),
    mkHet_, unHet_,
-   commuteHet)
+   commuteHet,
+   maybeInContextHet)
 where
 
 import Data.Data (Data, Typeable)
@@ -33,6 +34,7 @@ import Agda.Syntax.Internal.Generic (TermLike(..))
 import Agda.Syntax.Position
 
 import Agda.TypeChecking.Monad.Base
+import Agda.TypeChecking.Monad.Options
 import Agda.TypeChecking.Monad.Context (MonadAddContext(..), AddContext(..))
 import Agda.TypeChecking.Free.Lazy (Free(freeVars'), underBinder', underBinder)
 
@@ -217,6 +219,14 @@ unHet_ = case sing :: SingT het of
   STrue  -> unHet
   SFalse -> id
 
-
+{-# INLINE commuteHet #-}
 commuteHet :: (Coercible (f a) (f (Het s a))) => Het s (f a) -> f (Het s a)
 commuteHet = coerce . unHet
+
+{-# INLINE maybeInContextHet #-}
+maybeInContextHet :: (HasOptions m) => (forall het. Sing het => SingT het -> If het ContextHet () -> m a) -> m a
+maybeInContextHet κ = do
+  heterogeneousUnification >>= \case
+    True  -> κ STrue (ContextHet [])
+    False -> κ SFalse ()
+

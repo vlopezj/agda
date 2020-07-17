@@ -3575,6 +3575,8 @@ data TypeError
     -- Instance search errors
         | InstanceSearchDepthExhausted Term Type Int
         | TriedToCopyConstrainedPrim QName
+    -- Conversion errors
+        | ErrorInContextHet ContextHet TypeError
           deriving Show
 
 -- | Distinguish error message when parsing lhs or pattern synonym, resp.

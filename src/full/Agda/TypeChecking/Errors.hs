@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE NondecreasingIndentation #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -40,6 +41,7 @@ import Agda.Syntax.Translation.InternalToAbstract
 import Agda.Syntax.Scope.Monad (isDatatypeModule)
 import Agda.Syntax.Scope.Base
 
+import Agda.TypeChecking.Conversion.ContextHet
 import Agda.TypeChecking.Monad.Base
 import Agda.TypeChecking.Monad.Closure
 import Agda.TypeChecking.Monad.Context
@@ -255,6 +257,7 @@ errorString err = case err of
   NonFatalErrors{}                         -> "NonFatalErrors"
   InstanceSearchDepthExhausted{}           -> "InstanceSearchDepthExhausted"
   TriedToCopyConstrainedPrim{}             -> "TriedToCopyConstrainedPrim"
+  ErrorInContextHet het err                -> errorString err
 
 instance PrettyTCM TCErr where
   prettyTCM err = case err of
@@ -1154,6 +1157,9 @@ instance PrettyTCM TypeError where
 
     TriedToCopyConstrainedPrim q -> fsep $
       pwords "Cannot create a module containing a copy of" ++ [prettyTCM q]
+
+    ErrorInContextHet het err ->
+      prettyTCM (WithHet het (Het @'Compat err))
 
     where
     mpar n args
