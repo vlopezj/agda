@@ -119,7 +119,7 @@ instance MentionsMeta Constraint where
     ElimCmp _ _ t v as bs -> mm ((t, v), (as, bs))
     ElimCmpHet ctx _ _ t as bs -> mm (t, (as, bs))
     LevelCmp _ u v      -> mm (u, v)
-    TelCmp a b _ u v    -> mm ((a, b), (u, v))
+    TelCmp a b _ u v    -> mm (u, v)
     TelCmpHet ctx _ _ _ u v    -> mm (u, v)
     SortCmp _ a b       -> mm (a, b)
     Guarded{}           -> False  -- This gets woken up when the problem it's guarded by is solved
