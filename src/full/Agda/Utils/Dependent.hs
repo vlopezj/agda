@@ -30,3 +30,11 @@ type family If (cond :: Bool) (a :: k) (b :: k) :: k where
   If 'True  a b = a
   If 'False a b = b
 
+type family And (a :: Bool) (b :: Bool) :: Bool where
+  And 'True  a = a
+  And 'False a = 'False
+
+type family Or (a :: Bool) (b :: Bool) :: Bool where
+  Or 'True  a = 'True
+  Or 'False a = a
+

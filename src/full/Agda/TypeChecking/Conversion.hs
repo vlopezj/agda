@@ -144,10 +144,14 @@ compareTerm cmp a u v = compareAs cmp (AsTermsOf a) u v
 
 compareAsHet :: forall m. MonadConversion m => Comparison -> ContextHet ->
                 Het 'Whole CompareAsHet -> Het 'LHS Term -> Het 'RHS Term -> m ()
-compareAsHet cmp tel a u v =
-    compareAs'' STrue tel (fromCmp cmp) (unHet @'Whole $ a)
-                  (unHet @'LHS u)
-                  (unHet @'RHS v)
+compareAsHet cmp ctx a u v =
+  simplifyHet (WithHet ctx a) $ \case
+    Left (WithHet ctx' a') ->
+      compareAs'' STrue ctx' (fromCmp cmp) (unHet @'Whole $ a')
+                    (unHet @'LHS u)
+                    (unHet @'RHS v)
+    Right a' ->
+      compareAs'' SFalse () (fromCmp cmp) a' (unHet @'LHS u) (unHet @'RHS v)
 
 compareAs'' :: MonadConversion m => SingT het -> If het ContextHet () ->
               CompareDirection ->
@@ -414,7 +418,10 @@ compareTelHet :: (MonadConversion m) =>
   Het 'LHS Telescope ->
   Het 'RHS Telescope ->
   m ()
-compareTelHet = compareTel' STrue
+compareTelHet ctx a b cmp l r =
+  simplifyHet ctx $ \case
+    Right ()  -> compareTel' SFalse () (unHet @'LHS a) (unHet @'RHS b) cmp (unHet @'LHS l) (unHet @'RHS r)
+    Left ctx' -> compareTel' STrue  ctx' a b cmp l r
 
 compareTel' :: forall het m. (MonadConversion m, Sing het) => SingT het ->
   If het ContextHet () ->
@@ -431,8 +438,11 @@ compareTel' hetuni ctx t1 t2 cmp tel1 tel2 =
     (EmptyTel, _)        -> bad
     (_, EmptyTel)        -> bad
     (ExtendTel dom1{-@(Dom i1 a1)-} tel1, ExtendTel dom2{-@(Dom i2 a2)-} tel2) -> do
-      compareDom hetuni ctx (fromCmp cmp) dom1 dom2 tel1 tel2 bad bad bad bad $ \ctx' ->
-        compareTel' hetuni ctx' t1 t2 cmp (mkHet_ @het @'LHS$ absBody tel1) (mkHet_ @het @'RHS$ absBody tel2)
+      compareDom hetuni ctx (fromCmp cmp) dom1 dom2 tel1 tel2 bad bad bad bad $ \hetuni' ctx' ->
+        compareTel' hetuni' ctx'  (mkHet_ @'LHS hetuni'$ unHet_ @het @'LHS @Type t1)
+                                  (mkHet_ @'RHS hetuni'$ unHet_ @het @'RHS @Type t2) cmp
+                                  (mkHet_ @'LHS hetuni'$ absBody tel1)
+                                  (mkHet_ @'RHS hetuni'$ absBody tel2)
   where
     cTelCmp :: SingT het ->
       If het ContextHet () ->
@@ -737,9 +747,8 @@ compareAtom cmp t m n =
                 [ "t1 =" <+> prettyTCM t1
                 , "t2 =" <+> prettyTCM t2
                 ]
-              maybeInContextHet $ \hetuni ctx ->
-                compareDom hetuni ctx (flipCmp (fromCmp cmp)) dom1 dom2 b1 b2 errH errR errQ errC $ \ctx' ->
-                  compareType' hetuni ctx' (fromCmp cmp) (absBody b1) (absBody b2)
+              compareDom SFalse () (flipCmp (fromCmp cmp)) dom1 dom2 b1 b2 errH errR errQ errC $ \hetuni' ctx' ->
+                compareType' hetuni' ctx' (fromCmp cmp) (absBody b1) (absBody b2)
             where
             errH = typeError $ UnequalHiding t1 t2
             errR = typeError $ UnequalRelevance cmp t1 t2
@@ -748,20 +757,6 @@ compareAtom cmp t m n =
           _ -> __IMPOSSIBLE__
 
 -- | Check whether @a1 `cmp` a2@ and continue in context extended by @a1@.
-{-# SPECIALIZE compareDom :: (MonadConversion m , Free c)
-  => SingT 'False
-  -> ()
-  -> CompareDirection
-  -> Dom Type
-  -> Dom Type
-  -> Abs c
-  -> Abs c
-  -> m ()
-  -> m ()
-  -> m ()
-  -> m ()
-  -> (() -> m ())
-  -> m () #-}
 compareDom :: forall (het :: Bool) m c. (MonadConversion m , Free c)
   => SingT het
   -> If het ContextHet ()
@@ -774,7 +769,8 @@ compareDom :: forall (het :: Bool) m c. (MonadConversion m , Free c)
   -> m ()     -- ^ Continuation if mismatch in 'Relevance'.
   -> m ()     -- ^ Continuation if mismatch in 'Quantity'.
   -> m ()     -- ^ Continuation if mismatch in 'Cohesion'.
-  -> (If het ContextHet () -> m ()) -- ^ Continuation if comparison is successful.
+  -> (forall het'. (het' ~ Or het het', Sing het') =>
+        SingT het' -> If het' ContextHet () -> m ()) -- ^ Continuation if comparison is successful.
   -> m ()
 compareDom hetuni ctx cmp0
   dom1@(Dom{domInfo = i1, unDom = a1})
@@ -800,16 +796,17 @@ compareDom hetuni ctx cmp0
       let name = suggests [ Suggestion b1 , Suggestion b2 ]
       -- Víctor, 2020-07-13: We need to specify that the return type is ()
       -- See https://stackoverflow.com/questions/28582210/type-inference-with-gadts-a0-is-untouchable
-      () <- case hetuni of
-        STrue  -> do
-          addContextHet ctx (name, dom{unDom =
-                            TwinT{necessary  = True,
-                                  twinPid    = [pid],
-                                  twinLHS    = Het @'LHS a1,
-                                  twinCompat = Het @'Compat dom_a,
-                                  twinRHS    = Het @'RHS a2
-                                 }}) cont
-        SFalse -> addContext (name, dom) $ cont ()
+      () <- maybeInContextHet hetuni ctx $ \hetuni' ctx' ->
+        case (hetuni',ctx') of
+          (STrue,ctx')  -> do
+            addContextHet ctx' (name, dom{unDom =
+                              TwinT{necessary  = True,
+                                    twinPid    = [pid],
+                                    twinLHS    = Het @'LHS a1,
+                                    twinCompat = Het @'Compat dom_a,
+                                    twinRHS    = Het @'RHS a2
+                                   }}) (cont STrue)
+          (SFalse,()) -> addContext (name, dom) $ cont SFalse ()
       stealConstraints pid
         -- Andreas, 2013-05-15 Now, comparison of codomains is not
         -- blocked any more by getting stuck on domains.

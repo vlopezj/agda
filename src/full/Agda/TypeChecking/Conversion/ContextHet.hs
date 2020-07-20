@@ -19,10 +19,11 @@ module Agda.TypeChecking.Conversion.ContextHet
    underHet',
    AddContextHet(..),
    SingT(..),
-   mkHet_, unHet_,
+   mkHet_, unHet_, rHet_,
    commuteHet,
    maybeInContextHet,
-   module Data.Sequence)
+   module Data.Sequence,
+   SimplifyHet(..))
 where
 
 import Data.Coerce
@@ -225,8 +226,9 @@ underHet' :: forall s m a het. (MonadAddContext m, Sing s, HetSideIsType s ~ 'Tr
 underHet' STrue  ctx = addContext (twinContextAt @s ctx)
 underHet' SFalse ()  = id
 
-mkHet_ :: forall het s a. (Sing het) => a -> If het (Het s a) a
-mkHet_ = case sing :: SingT het of
+{-# INLINE mkHet_ #-}
+mkHet_ :: forall s het a. (Sing het) => SingT het -> a -> If het (Het s a) a
+mkHet_ _ = case sing :: SingT het of
   STrue -> Het
   SFalse -> id
 
@@ -235,14 +237,95 @@ unHet_ = case sing :: SingT het of
   STrue  -> unHet
   SFalse -> id
 
+rHet_ :: forall s het a. (Sing het) => If het (Het s a) a -> Het s a
+rHet_ = case sing :: SingT het of
+  STrue  -> id
+  SFalse -> Het
+
+
 {-# INLINE commuteHet #-}
 commuteHet :: (Coercible (f a) (f (Het s a))) => Het s (f a) -> f (Het s a)
 commuteHet = coerce . unHet
 
 {-# INLINE maybeInContextHet #-}
-maybeInContextHet :: (HasOptions m) => (forall het. Sing het => SingT het -> If het ContextHet () -> m a) -> m a
-maybeInContextHet κ = do
-  heterogeneousUnification >>= \case
-    True  -> κ STrue Empty
-    False -> κ SFalse ()
+maybeInContextHet :: (HasOptions m) =>
+  SingT het -> If het ContextHet () ->
+    (forall het'. (Sing het', het' ~ Or het het', het' ~ Or het' het) =>
+       SingT het' -> If (Or het het') ContextHet () -> m a) -> m a
+maybeInContextHet hetuni ctx κ = do
+  case hetuni of
+    STrue  -> κ STrue ctx
+    SFalse ->
+      heterogeneousUnification >>= \case
+        True  -> κ STrue Empty
+        False -> κ SFalse ()
 
+class SimplifyHet a where
+  type Simplified a
+  unsimplifyHet :: Simplified a -> a
+  simplifyHet   :: MonadConversion m => a -> (Either a (Simplified a) -> m b) -> m b
+
+simplifyHet' :: (MonadConversion m, SimplifyHet a) => a -> (a -> m b) -> m b
+simplifyHet' a κ = simplifyHet a $ \case
+  Left  a' -> κ a'
+  Right a' -> κ $ unsimplifyHet a'
+
+instance SimplifyHet ContextHet where
+  type Simplified ContextHet = ()
+
+  unsimplifyHet () = Empty
+
+  simplifyHet Empty κ = κ (Right ())
+  simplifyHet ((name, dt) :<| ctx) κ =
+    simplifyHet dt $ \case
+      Right dt' -> addContext (name, dt') $ simplifyHet ctx κ
+      Left  dt' -> κ$ Left$ ((name, dt') :<| ctx)
+
+instance SimplifyHet TwinT where
+  type Simplified TwinT = Type
+
+  unsimplifyHet = SingleT . Het @'Both
+
+  simplifyHet (SingleT a) κ = κ$ Right $ unHet @'Both a
+  simplifyHet a@(TwinT{twinPid,twinCompat}) κ =
+    allM twinPid isProblemSolved >>= \case
+      True  -> κ$ Right $ unHet @'Compat twinCompat
+      False -> κ$ Left  a
+
+instance SimplifyHet a => SimplifyHet (WithHet a) where
+  type Simplified (WithHet a) = Simplified a
+
+  unsimplifyHet = WithHet Empty . unsimplifyHet
+
+  simplifyHet (WithHet ctx a) κ = simplifyHet ctx $ \case
+    Right () -> simplifyHet a $ \case
+      Left  a' -> κ$ Left$ WithHet Empty a'
+      Right a' -> κ$ Right$ a'
+    Left ctx'  -> κ$ Left$ WithHet ctx' a
+
+instance SimplifyHet a => SimplifyHet (Dom a) where
+  type Simplified (Dom a) = Dom (Simplified a)
+
+  unsimplifyHet = fmap unsimplifyHet
+  simplifyHet a κ = simplifyHet (unDom a) $ \case
+    Left  a' -> κ$ Left$  a{unDom=a'}
+    Right a' -> κ$ Right$ a{unDom=a'}
+
+instance SimplifyHet a => SimplifyHet (CompareAs' a) where
+  type Simplified (CompareAs' a) = CompareAs' (Simplified a)
+
+  unsimplifyHet = fmap unsimplifyHet
+  simplifyHet AsTypes κ     = κ (Right AsTypes)
+  simplifyHet AsSizes κ     = κ (Right AsSizes)
+  simplifyHet (AsTermsOf a) κ = simplifyHet a $ \case
+    Right a' -> κ$ Right$ AsTermsOf a'
+    Left  a' -> κ$ Left$  AsTermsOf a'
+
+instance SimplifyHet a => SimplifyHet (Het side a) where
+  type Simplified (Het side a) = Simplified a
+
+  unsimplifyHet = Het . unsimplifyHet
+
+  simplifyHet (Het a) κ = simplifyHet a $ \case
+    Right a' -> κ$ Right a'
+    Left  a' -> κ$ Left$ Het a'

@@ -1053,12 +1053,12 @@ instance (Subst t a, Simplify a) => Simplify (Tele a) where
 instance Simplify ProblemConstraint where
   simplify' (PConstr pid unblock c) = PConstr pid unblock <$> simplify' c
 
-class SimplifyHet a where
+class SimplifyInHet a where
   simplifyHet' :: ContextHet -> a -> ReduceM a
-  default simplifyHet' :: (Traversable t, a ~ t b, SimplifyHet b) => ContextHet -> a -> ReduceM a
+  default simplifyHet' :: (Traversable t, a ~ t b, SimplifyInHet b) => ContextHet -> a -> ReduceM a
   simplifyHet' = traverse . simplifyHet'
 
-instance SimplifyHet TwinT where
+instance SimplifyInHet TwinT where
   simplifyHet' :: ContextHet -> TwinT -> ReduceM TwinT
   simplifyHet' tel (SingleT a) = SingleT <$> underHet @'Both tel simplify' a
   simplifyHet' tel t@(TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}) = do
@@ -1068,7 +1068,7 @@ instance SimplifyHet TwinT where
     return TwinT{necessary,twinPid,twinLHS,twinRHS,twinCompat}
 
 -- 2020-07-07 TODO Make more efficient, or give up on names altogether
--- instance {-# OVERLAPPING #-} SimplifyHet ContextHet where
+-- instance {-# OVERLAPPING #-} SimplifyInHet ContextHet where
 --   simplifyHet' env = go (telToList env)
 --     where
 --       go :: [Dom (ArgName, TwinT)] -> ContextHet -> ReduceM ContextHet
@@ -1076,14 +1076,14 @@ instance SimplifyHet TwinT where
 --       go env (ExtendTel a (Abs x tel)) = ExtendTel <$> simplifyHet' (telFromList env) a <*> (Abs x <$> go (env ++ [fmap (x,) a]) tel)
 --       go env (ExtendTel a (NoAbs{}))   = __IMPOSSIBLE__
 
-instance SimplifyHet a => SimplifyHet (Dom a)
-instance SimplifyHet a => SimplifyHet (CompareAs' a)
+instance SimplifyInHet a => SimplifyInHet (Dom a)
+instance SimplifyInHet a => SimplifyInHet (CompareAs' a)
 
-instance (Sing s, HetSideIsType s ~ 'True, Simplify a) => SimplifyHet (Het s a) where
+instance (Sing s, HetSideIsType s ~ 'True, Simplify a) => SimplifyInHet (Het s a) where
   simplifyHet' tel a = underHet @s tel simplify' a
 
 -- This is not actually overlapping, as HetSideIsType 'Whole ~ 'False, but GHC can't tell
-instance {-# OVERLAPPING #-} SimplifyHet a => SimplifyHet (Het 'Whole a)
+instance {-# OVERLAPPING #-} SimplifyInHet a => SimplifyInHet (Het 'Whole a)
 
 instance Simplify ContextHet where
   simplify' = go Empty
