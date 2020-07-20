@@ -418,11 +418,11 @@ instance Reify i a => Reify (WithHet (TwinT' i)) (TwinT' a) where
     return$ TwinT{twinPid,necessary,twinLHS=a',twinRHS=b',twinCompat=c'}
 
 instance Reify ContextHet (OutputContextHet A.Name A.Expr) where
-  reify = sequence . go Empty . unContextHet
+  reify = sequence . go Empty
     where
       go env Empty = []
       go env (a@(name,v) :<| as) = ((name,) <$> reify (fmap
-                                    (WithHet (ContextHet env)) v)):go (env :|> a) as
+                                    (WithHet env) v)):go (env :|> a) as
 
 instance Reify Constraint (OutputConstraint A.Name Expr Expr) where
     reify (ValueCmp cmp (AsTermsOf t) u v) = CmpInType cmp <$> reify t <*> reify u <*> reify v

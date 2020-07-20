@@ -6,7 +6,7 @@ import Control.Monad.Except ( MonadError )
 import qualified Control.Monad.Fail as Fail
 
 import Agda.Syntax.Internal
-import Agda.TypeChecking.Conversion.ContextHet
+import {-# SOURCE #-} Agda.TypeChecking.Conversion.ContextHet
 import Agda.TypeChecking.Monad
 import Agda.TypeChecking.Warnings
 

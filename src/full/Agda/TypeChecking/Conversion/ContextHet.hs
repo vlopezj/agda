@@ -12,7 +12,7 @@ module Agda.TypeChecking.Conversion.ContextHet
    twinAt,
    HetSide(..),
    Het(..),
-   ContextHet(..),
+   ContextHet(.., Empty, (:<|), (:|>)),
    WithHet(..),
    twinContextAt,
    underHet,
@@ -28,7 +28,8 @@ where
 import Data.Coerce
 import Data.Data (Data, Typeable)
 import Data.Foldable (toList)
-import Data.Sequence (Seq(Empty, (:<|), (:|>)))
+import Data.Sequence (Seq)
+import qualified Data.Sequence as S
 
 import Agda.Syntax.Abstract.Name
 import Agda.Syntax.Concrete.Name (NameInScope(..), LensInScope(..), nameRoot, nameToRawName)
@@ -37,11 +38,14 @@ import Agda.Syntax.Internal.Generic (TermLike(..))
 import Agda.Syntax.Position
 
 import Agda.TypeChecking.Monad.Base
+import {-# SOURCE #-} Agda.TypeChecking.Conversion
+import Agda.TypeChecking.Monad.Constraints
 import Agda.TypeChecking.Monad.Options
 import Agda.TypeChecking.Monad.Context (MonadAddContext(..), AddContext(..))
 import Agda.TypeChecking.Free.Lazy (Free(freeVars'), underBinder', underBinder)
 
 import Agda.Utils.Dependent
+import Agda.Utils.Monad
 import Agda.Utils.Pretty
 import Agda.Utils.Size
 
@@ -166,9 +170,21 @@ instance TermLike t => TermLike (Het a t) where
 newtype ContextHet = ContextHet { unContextHet :: Seq (Name, Dom TwinT) }
   deriving (Data, Show)
 
+pattern Empty :: ContextHet
+pattern Empty                    = ContextHet S.Empty
+pattern (:<|) :: (Name, Dom TwinT) -> ContextHet -> ContextHet
+pattern a :<| ctx <- ContextHet (a S.:<| (ContextHet -> ctx))
+  where a :<| ctx =  ContextHet (a S.:<|  unContextHet  ctx )
+pattern (:|>) :: ContextHet -> (Name, Dom TwinT) -> ContextHet
+pattern ctx :|> a <- ContextHet ((ContextHet -> ctx) S.:|> a)
+  where ctx :|> a =  ContextHet ( unContextHet  ctx  S.:|> a)
+{-# COMPLETE Empty, (:<|) #-}
+{-# COMPLETE Empty, (:|>) #-}
+
+
 instance AddContextHet (Name, Dom TwinT) where
   {-# INLINABLE addContextHet #-}
-  addContextHet (ContextHet ctx) p κ = κ$ ContextHet$ ctx :|> p
+  addContextHet ctx p κ = κ$ ctx :|> p
 
 twinContextAt :: forall s. (Sing s, HetSideIsType s ~ 'True) => ContextHet -> [(Name, Dom Type)]
 twinContextAt = fmap (fmap (fmap (twinAt @s))) . toList . unContextHet
@@ -178,10 +194,10 @@ instance TermLike ContextHet where
   traverseTermM = __IMPOSSIBLE__
 
 instance Free ContextHet where
-  freeVars' = go . unContextHet
+  freeVars' = go
     where
       go Empty          = mempty
-      go ((_,v) :<| vs) = freeVars' v <> underBinder (freeVars' (ContextHet vs))
+      go ((_,v) :<| vs) = freeVars' v <> underBinder (freeVars' vs)
 
 instance Sized ContextHet where
   size = length . unContextHet
@@ -227,6 +243,6 @@ commuteHet = coerce . unHet
 maybeInContextHet :: (HasOptions m) => (forall het. Sing het => SingT het -> If het ContextHet () -> m a) -> m a
 maybeInContextHet κ = do
   heterogeneousUnification >>= \case
-    True  -> κ STrue (ContextHet Empty)
+    True  -> κ STrue Empty
     False -> κ SFalse ()
 
