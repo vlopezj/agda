@@ -214,8 +214,8 @@ instance Instantiate a => Instantiate (Het s a) where
 instance Instantiate ContextHet where
   instantiate' = fmap ContextHet . go . unContextHet
     where
-      go [] = return []
-      go (x@(n, v):vs) = (:) <$> ((n,) <$> instantiate' v) <*> (go vs)
+      go Empty = return Empty
+      go (x@(n, v) :<| vs) = (:<|) <$> ((n,) <$> instantiate' v) <*> (go vs)
 
 instance Instantiate Constraint where
   instantiate' (ValueCmp cmp t u v) = do
@@ -866,10 +866,10 @@ instance ReduceHet a => ReduceHet (Dom a)
 instance ReduceHet a => ReduceHet (CompareAs' a)
 
 instance Reduce ContextHet where
-  reduce' = fmap ContextHet . go [] . unContextHet
+  reduce' = fmap ContextHet . go Empty . unContextHet
     where
-      go env [] = return []
-      go env (x@(n, v):vs) = (:) <$> ((n,) <$> reduceHet' (ContextHet env) v) <*> (go (env ++ [x]) vs)
+      go env Empty = return Empty
+      go env (x@(n, v) :<| vs) = (:<|) <$> ((n,) <$> reduceHet' (ContextHet env) v) <*> (go (env :|> x) vs)
 
 instance (Sing s, HetSideIsType s ~ 'True, Reduce a) => ReduceHet (Het s a) where
   reduceHet' tel a = underHet @s tel reduce' a
@@ -1086,10 +1086,10 @@ instance (Sing s, HetSideIsType s ~ 'True, Simplify a) => SimplifyHet (Het s a) 
 instance {-# OVERLAPPING #-} SimplifyHet a => SimplifyHet (Het 'Whole a)
 
 instance Simplify ContextHet where
-  simplify' = fmap ContextHet . go [] . unContextHet
+  simplify' = fmap ContextHet . go Empty . unContextHet
     where
-      go env [] = return []
-      go env (x@(n, v):vs) = (:) <$> ((n,) <$> simplifyHet' (ContextHet env) v) <*> (go (env ++ [x]) vs)
+      go env Empty = return Empty
+      go env (x@(n, v) :<| vs) = (:<|) <$> ((n,) <$> simplifyHet' (ContextHet env) v) <*> (go (env :|> x) vs)
 
 instance Simplify Constraint where
   simplify' (ValueCmp cmp t u v) = do
@@ -1318,10 +1318,10 @@ instance (Sing s, HetSideIsType s ~ 'True, Normalise a) => NormaliseHet (Het s a
 instance {-# OVERLAPPING #-} (NormaliseHet a) => NormaliseHet (Het 'Whole a)
 
 instance Normalise ContextHet where
-  normalise' = fmap ContextHet . go [] . unContextHet
+  normalise' = fmap ContextHet . go Empty . unContextHet
     where
-      go env [] = return []
-      go env (x@(n, v):vs) = (:) <$> ((n,) <$> normaliseHet' (ContextHet env) v) <*> (go (env ++ [x]) vs)
+      go env Empty = return Empty
+      go env (x@(n, v) :<| vs) = (:<|) <$> ((n,) <$> normaliseHet' (ContextHet env) v) <*> (go (env :|> x) vs)
 
 instance Normalise Constraint where
   normalise' (ValueCmp cmp t u v) = do
@@ -1588,10 +1588,10 @@ instance InstantiateFullHet a => InstantiateFullHet (Dom a)
 instance InstantiateFullHet a => InstantiateFullHet (CompareAs' a)
 
 instance InstantiateFull ContextHet where
-  instantiateFull' = fmap ContextHet . go [] . unContextHet
+  instantiateFull' = fmap ContextHet . go mempty . unContextHet
     where
-      go env [] = return []
-      go env (x@(n, v):vs) = (:) <$> ((n,) <$> instantiateFullHet' (ContextHet env) v) <*> (go (env ++ [x]) vs)
+      go env Empty = return Empty
+      go env (x@(n, v) :<| vs) = (:<|) <$> ((n,) <$> instantiateFullHet' (ContextHet env) v) <*> (go (env :|> x) vs)
 
 instance (Sing s, HetSideIsType s ~ 'True, InstantiateFull a) => InstantiateFullHet (Het s a) where
   instantiateFullHet' tel a = underHet @s tel instantiateFull' a

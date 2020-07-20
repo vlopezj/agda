@@ -2,6 +2,7 @@
 module Agda.TypeChecking.Conversion.ContextHet where
 
 import Data.Data (Data, Typeable)
+import Data.Sequence (Seq)
 
 import Agda.TypeChecking.Free.Lazy (Free)
 import Agda.Syntax.Internal
@@ -24,7 +25,7 @@ instance TermLike TwinT
 
 data HetSide = LHS | RHS | Compat | Whole | Both
 
-newtype ContextHet = ContextHet { unContextHet :: [(Name, Dom TwinT)] }
+newtype ContextHet = ContextHet { unContextHet :: Seq (Name, Dom TwinT) }
 instance Data ContextHet
 instance Show ContextHet
 instance Free ContextHet

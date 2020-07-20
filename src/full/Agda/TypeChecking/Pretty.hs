@@ -317,13 +317,13 @@ instance {-# OVERLAPPING #-} (PrettyTCM (WithHet a)) => PrettyTCM (WithHet (Het 
 
 instance PrettyTCM ContextHet where
   prettyTCM :: forall m. MonadPretty m => ContextHet -> m Doc
-  prettyTCM = fmap P.fsep . sequence . go [] . unContextHet
+  prettyTCM = fmap P.fsep . sequence . go Empty . unContextHet
     where
-      go :: [(Name, Dom TwinT)] -> [(Name, Dom TwinT)] -> [m Doc]
-      go env [] = []
-      go env (a@(n,v):as) = (pure (P.pretty n) <+> ":" <+>
+      go :: Seq (Name, Dom TwinT) -> Seq (Name, Dom TwinT) -> [m Doc]
+      go env Empty = []
+      go env (a@(n,v) :<| as) = (pure (P.pretty n) <+> ":" <+>
                                prettyTCM (WithHet (ContextHet env) v)
-                             ):go (env ++ [a]) as
+                             ):go (env :|> a) as
 
 instance PrettyTCM Constraint where
     prettyTCM c = case c of

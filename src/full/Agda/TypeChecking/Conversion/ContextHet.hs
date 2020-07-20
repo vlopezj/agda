@@ -21,11 +21,14 @@ module Agda.TypeChecking.Conversion.ContextHet
    SingT(..),
    mkHet_, unHet_,
    commuteHet,
-   maybeInContextHet)
+   maybeInContextHet,
+   module Data.Sequence)
 where
 
-import Data.Data (Data, Typeable)
 import Data.Coerce
+import Data.Data (Data, Typeable)
+import Data.Foldable (toList)
+import Data.Sequence (Seq(Empty, (:<|), (:|>)))
 
 import Agda.Syntax.Abstract.Name
 import Agda.Syntax.Concrete.Name (NameInScope(..), LensInScope(..), nameRoot, nameToRawName)
@@ -160,28 +163,25 @@ instance Monad (Het s) where
 instance TermLike t => TermLike (Het a t) where
 
 -- | The context is in left-to-right order
-newtype ContextHet = ContextHet { unContextHet :: [(Name, Dom TwinT)] }
+newtype ContextHet = ContextHet { unContextHet :: Seq (Name, Dom TwinT) }
   deriving (Data, Show)
 
 instance AddContextHet (Name, Dom TwinT) where
   {-# INLINABLE addContextHet #-}
-  addContextHet (ContextHet ctx) p κ = κ$ ContextHet$ ctx ++ [p]
+  addContextHet (ContextHet ctx) p κ = κ$ ContextHet$ ctx :|> p
 
 twinContextAt :: forall s. (Sing s, HetSideIsType s ~ 'True) => ContextHet -> [(Name, Dom Type)]
-twinContextAt = fmap (fmap (fmap (twinAt @s))) . unContextHet
+twinContextAt = fmap (fmap (fmap (twinAt @s))) . toList . unContextHet
 
 instance TermLike ContextHet where
-  foldTerm f = go . unContextHet
-    where
-      go [] = mempty
-      go ((_,v):vs) = foldTerm f (v, ContextHet vs)
+  foldTerm f = foldMap (foldTerm f . snd) . unContextHet
   traverseTermM = __IMPOSSIBLE__
 
 instance Free ContextHet where
   freeVars' = go . unContextHet
     where
-      go []         = mempty
-      go ((_,v):vs) = freeVars' v <> underBinder (freeVars' (ContextHet vs))
+      go Empty          = mempty
+      go ((_,v) :<| vs) = freeVars' v <> underBinder (freeVars' (ContextHet vs))
 
 instance Sized ContextHet where
   size = length . unContextHet
@@ -227,6 +227,6 @@ commuteHet = coerce . unHet
 maybeInContextHet :: (HasOptions m) => (forall het. Sing het => SingT het -> If het ContextHet () -> m a) -> m a
 maybeInContextHet κ = do
   heterogeneousUnification >>= \case
-    True  -> κ STrue (ContextHet [])
+    True  -> κ STrue (ContextHet Empty)
     False -> κ SFalse ()
 

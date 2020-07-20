@@ -26,6 +26,7 @@ import qualified Data.List as List
 import Data.Map (Map)
 import Data.Maybe
 import Data.HashMap.Strict (HashMap)
+import Data.Sequence (Seq(..))
 
 import Debug.Trace (trace)
 import Language.Haskell.TH.Syntax (thenCmp) -- lexicographic combination of Ordering
@@ -956,8 +957,8 @@ instance Subst t a => Subst t (Tele a) where
 instance Subst Term ContextHet where
   applySubst rho = ContextHet . go rho . unContextHet
     where
-      go rho [] = []
-      go rho ((name,v):vs) = (name,applySubst rho v):go (liftS 1 rho) vs
+      go rho Empty = Empty
+      go rho ((name,v) :<| vs) = (name,applySubst rho v) :<| go (liftS 1 rho) vs
 
 instance Subst Term Constraint where
   applySubst rho c = case c of

@@ -3,6 +3,7 @@ module Agda.TypeChecking.MetaVars.Mention where
 
 import Data.HashSet (HashSet)
 import qualified Data.HashSet as HashSet
+import Data.Sequence (Seq)
 import qualified Data.Set as Set
 
 import Agda.Syntax.Common
@@ -78,6 +79,9 @@ instance MentionsMeta t => MentionsMeta (Dom t) where
   mentionsMetas xs = mentionsMetas xs . unDom
 
 instance MentionsMeta t => MentionsMeta [t] where
+  mentionsMetas xs = any (mentionsMetas xs)
+
+instance MentionsMeta t => MentionsMeta (Seq t) where
   mentionsMetas xs = any (mentionsMetas xs)
 
 instance MentionsMeta t => MentionsMeta (Maybe t) where

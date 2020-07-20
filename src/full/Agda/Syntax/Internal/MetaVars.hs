@@ -3,6 +3,7 @@ module Agda.Syntax.Internal.MetaVars where
 
 import Data.Monoid
 import qualified Data.Set as Set
+import Data.Sequence (Seq)
 
 import Agda.Syntax.Common
 import Agda.Syntax.Internal
@@ -42,12 +43,13 @@ instance (AllMetas a, AllMetas b, AllMetas c, AllMetas d) => AllMetas (a, b, c, 
   allMetas f (x, y, z, w) = allMetas f (x, (y, (z, w)))
 
 instance AllMetas a => AllMetas [a]       where allMetas f xs = foldMap (allMetas f) xs
+instance AllMetas a => AllMetas (Seq a)   where allMetas f xs = foldMap (allMetas f) xs
 instance AllMetas a => AllMetas (Maybe a) where allMetas f xs = foldMap (allMetas f) xs
 instance AllMetas a => AllMetas (Arg a)   where allMetas f xs = foldMap (allMetas f) xs
 
 instance AllMetas a => AllMetas (Het side a) where allMetas f = allMetas f . unHet
 instance AllMetas a => AllMetas (TwinT' a) where allMetas f = foldMap (allMetas f)
-instance AllMetas (ContextHet) where allMetas f = allMetas f . map snd . unContextHet
+instance AllMetas (ContextHet) where allMetas f = allMetas f . fmap snd . unContextHet
 
 allMetas' :: (TermLike a, Monoid m) => (MetaId -> m) -> a -> m
 allMetas' singl = foldTerm metas
