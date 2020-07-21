@@ -147,19 +147,19 @@ compareAsHet :: forall m. MonadConversion m => Comparison -> ContextHet ->
 compareAsHet cmp ctx a u v =
   simplifyHet (WithHet ctx a) $ \case
     Left (WithHet ctx' a') ->
-      compareAs'' STrue ctx' (fromCmp cmp) (unHet @'Whole $ a')
+      compareAs_ STrue ctx' (fromCmp cmp) (unHet @'Whole $ a')
                     (unHet @'LHS u)
                     (unHet @'RHS v)
     Right a' ->
-      compareAs'' SFalse () (fromCmp cmp) a' (unHet @'LHS u) (unHet @'RHS v)
+      compareAs_ SFalse () (fromCmp cmp) a' (unHet @'LHS u) (unHet @'RHS v)
 
-compareAs'' :: MonadConversion m => SingT het -> If het ContextHet () ->
+compareAs_ :: MonadConversion m => SingT het -> If het ContextHet () ->
               CompareDirection ->
               CompareAs' (If het TwinT Type) -> Term -> Term -> m ()
-compareAs'' SFalse () cmp a t1 t2 = dirToCmp (flip compareAs a) cmp t1 t2
-compareAs'' STrue  ctx cmp a t1 t2 =
+compareAs_ SFalse () cmp a t1 t2 = dirToCmp (flip compareAs a) cmp t1 t2
+compareAs_ STrue  ctx cmp a t1 t2 =
   addContext (twinContextAt @'Compat ctx) $
-    dirToCmp (flip compareAs' (fmap (twinAt @'Compat) a)) cmp t1 t2
+    dirToCmp (flip compareAs (fmap (twinAt @'Compat) a)) cmp t1 t2
 
 -- | Type directed equality on terms or types.
 compareAs :: forall m. MonadConversion m => Comparison -> CompareAs -> Term -> Term -> m ()
@@ -1169,7 +1169,7 @@ compareType' hetuni ctx cmp ty1@(El s1 a1) ty2@(El s2 a2) =
           , hsep [ "   sorts:", uH' SLHS (prettyTCM s1), " and ",
                                 uH' SRHS (prettyTCM s2) ]
           ]
-        compareAs'' hetuni ctx cmp AsTypes a1 a2
+        compareAs_ hetuni ctx cmp AsTypes a1 a2
         unlessM ((optCumulativity <$> pragmaOptions) `or2M`
                  (not . optCompareSorts <$> pragmaOptions)) $
           uH' SCompat $ compareSort CmpEq s1 s2
