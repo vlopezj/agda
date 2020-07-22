@@ -37,4 +37,3 @@ type family And (a :: Bool) (b :: Bool) :: Bool where
 type family Or (a :: Bool) (b :: Bool) :: Bool where
   Or 'True  a = 'True
   Or 'False a = a
-

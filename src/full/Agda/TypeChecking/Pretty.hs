@@ -442,7 +442,7 @@ commuteDomTwin dt = case unDom dt of
 instance PrettyTCM (WithHet (Dom TwinT)) where
   prettyTCM (WithHet tel a) = prettyTCM$ WithHet tel (commuteDomTwin a)
 
-instance PrettyTCM (WithHet a) => PrettyTCM (WithHet (CompareAs' a)) where
+instance PrettyTCM (WithHet' c a) => PrettyTCM (WithHet' c (CompareAs' a)) where
   prettyTCM (WithHet tel a) = prettyTCM$ fmap (WithHet tel) a
 
 instance PrettyTCM a => PrettyTCM (CompareAs' a) where
@@ -617,3 +617,16 @@ instance PrettyTCM Candidate where
   prettyTCM c = case candidateKind c of
     (GlobalCandidate q) -> prettyTCM q
     LocalCandidate      -> prettyTCM $ candidateTerm c
+
+instance (Sing het, PrettyTCM (WithHet a), PrettyTCM b) => PrettyTCM (WithHet' (If_ het ContextHet ()) (If_ het a b)) where
+  prettyTCM (WithHet ctx a) = case (sing :: SingT het, ctx) of
+    (STrue,  If ctx)  -> prettyTCM $ WithHet ctx $ unIf a
+    (SFalse, If ()) -> prettyTCM $ unIf a
+
+instance (Sing het, PrettyTCM a, PrettyTCM b) => PrettyTCM (If_ het a b) where
+  prettyTCM = case sing @_ @het of
+    STrue  -> prettyTCM . unIf
+    SFalse -> prettyTCM . unIf
+
+instance PrettyTCM () where
+  prettyTCM () = return "·"

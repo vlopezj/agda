@@ -2,6 +2,7 @@
 {-# LANGUAGE NondecreasingIndentation #-}
 {-# LANGUAGE TypeFamilies             #-}
 {-# LANGUAGE PartialTypeSignatures    #-}
+{-# LANGUAGE ViewPatterns             #-}
 
 module Agda.TypeChecking.Conversion where
 
@@ -147,32 +148,53 @@ compareAsHet :: forall m. MonadConversion m => Comparison -> ContextHet ->
 compareAsHet cmp ctx a u v =
   simplifyHet (WithHet ctx a) $ \case
     Left (WithHet ctx' a') ->
-      compareAs_ STrue ctx' (fromCmp cmp) (unHet @'Whole $ a')
-                    (unHet @'LHS u)
-                    (unHet @'RHS v)
+      compareAs_ STrue (If ctx') cmp (fmap If$ unHet @'Whole $ a') (If u) (If v)
     Right a' ->
-      compareAs_ SFalse () (fromCmp cmp) a' (unHet @'LHS u) (unHet @'RHS v)
+      compareAs_ SFalse (If ()) cmp (fmap If a') (mkIfHet_ u) (mkIfHet_ v)
 
-compareAs_ :: MonadConversion m => SingT het -> If het ContextHet () ->
+-- compareAs_ :: MonadConversion m => SingT het -> If het ContextHet () ->
+--               CompareDirection ->
+--               CompareAs' (If het TwinT Type) -> Term -> Term -> m ()
+-- compareAs_ SFalse () cmp a t1 t2 = dirToCmp (flip compareAs a) cmp t1 t2
+-- compareAs_ STrue  ctx cmp a t1 t2 =
+--   addContext (twinContextAt @'Compat ctx) $
+--     dirToCmp (flip compareAs (fmap (twinAt @'Compat) a)) cmp t1 t2
+
+compareAs :: forall m. MonadConversion m => Comparison -> CompareAs -> Term -> Term -> m ()
+compareAs cmp a u v = compareAs_ SFalse (If ()) cmp (fmap If a) (mkHet_ u) (mkHet_ v)
+
+compareAs_' :: forall het m. (Sing het, MonadConversion m) => SingT het -> If_ het ContextHet () ->
               CompareDirection ->
-              CompareAs' (If het TwinT Type) -> Term -> Term -> m ()
-compareAs_ SFalse () cmp a t1 t2 = dirToCmp (flip compareAs a) cmp t1 t2
-compareAs_ STrue  ctx cmp a t1 t2 =
-  addContext (twinContextAt @'Compat ctx) $
-    dirToCmp (flip compareAs (fmap (twinAt @'Compat) a)) cmp t1 t2
+              CompareAs' (If_ het TwinT Type) ->
+              IfHet het 'LHS Term ->
+              IfHet het 'RHS Term ->
+              m ()
+compareAs_' hetuni ctx DirEq  a u v = compareAs_ hetuni ctx           CmpEq  a u v
+compareAs_' hetuni ctx DirLeq a u v = compareAs_ hetuni ctx           CmpLeq a u v
+compareAs_' hetuni ctx DirGeq a u v = compareAs_ hetuni (flipHet ctx) CmpLeq (flipHet a) (flipHet v) (flipHet u)
 
 -- | Type directed equality on terms or types.
-compareAs :: forall m. MonadConversion m => Comparison -> CompareAs -> Term -> Term -> m ()
+compareAs_ :: forall het m. (MonadConversion m, Sing het) => SingT het ->
+              If_ het ContextHet () ->
+              Comparison ->
+              CompareAs' (If_ het TwinT Type) ->
+              IfHet het 'LHS Term ->
+              IfHet het 'RHS Term ->
+              m ()
   -- If one term is a meta, try to instantiate right away. This avoids unnecessary unfolding.
   -- Andreas, 2012-02-14: This is UNSOUND for subtyping!
-compareAs cmp a u v = do
+compareAs_ hetuni ctx cmp a u v = do
   reportSDoc "tc.conv.term" 20 $ sep $
     [ "compareTerm"
-    , nest 2 $ prettyTCM u <+> prettyTCM cmp <+> prettyTCM v
-    , nest 2 $ prettyTCM a
+    ] <> [ nest 2 $ prettyTCM ctx ] <>
+    [ nest 2 $ prettyTCM (WithHet ctx u) <+>
+               prettyTCM cmp <+>
+               prettyTCM (WithHet ctx v)
+    , nest 2 $ prettyTCM (WithHet ctx a)
     ]
   -- Check syntactic equality. This actually saves us quite a bit of work.
-  ((u, v), equal) <- SynEq.checkSyntacticEquality u v
+  ((mkHet_ @'LHS @het -> u, mkHet_ @'RHS @het -> v), equal) <-
+    underHet_ @'Compat ctx$ SynEq.checkSyntacticEquality (unHet_ @'LHS u) (unHet_ @'RHS v)
   -- OLD CODE, traverses the *full* terms u v at each step, even if they
   -- are different somewhere.  Leads to infeasibility in issue 854.
   -- (u, v) <- instantiateFull (u, v)
@@ -181,41 +203,47 @@ compareAs cmp a u v = do
       verboseS "profile.sharing" 20 $ tick "unequal terms"
       reportSDoc "tc.conv.term" 15 $ sep $
         [ "compareTerm (not syntactically equal)"
-        , nest 2 $ prettyTCM u <+> prettyTCM cmp <+> prettyTCM v
-        , nest 2 $ prettyTCM a
+        ] <> [ nest 2 $ prettyTCM ctx ] <>
+        [ nest 2 $ prettyTCM (WithHet ctx u) <+> prettyTCM cmp <+> prettyTCM (WithHet ctx v)
+        , nest 2 $ prettyTCM (WithHet ctx a)
         ]
       -- If we are at type Size, we cannot short-cut comparison
       -- against metas by assignment.
       -- Andreas, 2014-04-12: this looks incomplete.
       -- It seems to assume we are never comparing
       -- at function types into Size.
-      let fallback = compareAs' cmp a u v
+      let uH :: forall a. m a -> m a
+          uH = underHet_ @'Compat ctx
+      let fallback = uH$ compareAs' cmp (twinAt @'Compat a) (twinAt @'LHS u) (twinAt @'RHS v)
           unlessSubtyping :: m () -> m ()
           unlessSubtyping cont =
               if cmp == CmpEq then cont else do
                 -- Andreas, 2014-04-12 do not short cut if type is blocked.
-                ifBlocked a (\ _ _ -> fallback) {-else-} $ \ _ a -> do
-                  -- do not short circuit size comparison!
-                  caseMaybeM (isSizeType a) cont (\ _ -> fallback)
+                (uH$ ifBlocked' (twinAt @'Compat a)) >>= \case
+                  Left{} -> fallback
+                  Right (_,a) -> do
+                    -- do not short circuit size comparison!
+                    caseMaybeM (uH$ isSizeType a) cont (\ _ -> fallback)
 
           dir = fromCmp cmp
           rid = flipCmp dir     -- The reverse direction.  Bad name, I know.
-      case (u, v) of
+      case (unHet_ @'LHS u, unHet_ @'RHS v) of
         (MetaV x us, MetaV y vs)
-          | x /= y    -> unlessSubtyping $ solve1 `orelse` solve2 `orelse` fallback
+          | x /= y    ->
+              unlessSubtyping $ solve1 `orelse` solve2 `orelse` fallback
           | otherwise -> fallback
           where
-            (solve1, solve2) | x > y     = (assign dir x us v, assign rid y vs u)
-                             | otherwise = (assign rid y vs u, assign dir x us v)
-        (MetaV x us, _) -> unlessSubtyping $ assign dir x us v `orelse` fallback
-        (_, MetaV y vs) -> unlessSubtyping $ assign rid y vs u `orelse` fallback
+            (solve1, solve2) | x > y     = (uH$ assign dir x us (twinAt @'RHS v), uH$ assign rid y vs (twinAt @'LHS u))
+                             | otherwise = (uH$ assign rid y vs (twinAt @'LHS u), uH$ assign dir x us (twinAt @'RHS v))
+        (MetaV x us, _) -> unlessSubtyping $ uH (assign dir x us (twinAt @'RHS v)) `orelse` fallback
+        (_, MetaV y vs) -> unlessSubtyping $ uH (assign rid y vs (twinAt @'LHS u)) `orelse` fallback
         (Def f es, Def f' es') | f == f' ->
           ifNotM (optFirstOrder <$> pragmaOptions) fallback $ {- else -} unlessSubtyping $ do
-          def <- getConstInfo f
+          def <- uH$ getConstInfo f
           -- We do not shortcut projection-likes
           if isJust $ isProjection_ (theDef def) then fallback else do
-          pol <- getPolarity' cmp f
-          compareElims pol [] (defType def) (Def f []) es es' `orelse` fallback
+          pol <- uH$ getPolarity' cmp f
+          uH (compareElims pol [] (defType def) (Def f []) es es') `orelse` fallback
         _               -> fallback
   where
     assign :: CompareDirection -> MetaId -> Elims -> Term -> m ()
@@ -226,7 +254,7 @@ compareAs cmp a u v = do
         , nest 2 $ prettyTCM (MetaV x es) <+> ":=" <+> prettyTCM v
         ]
       whenM (isInstantiatedMeta x) (patternViolation alwaysUnblock) -- Already instantiated, retry right away
-      assignE dir x es v a $ compareAsDir dir a
+      assignE dir x es v (twinAt @'Compat a) $ compareAsDir dir (twinAt @'Compat a)
       reportSDoc "tc.conv.term.shortcut" 50 $
         "shortcut successful" $$ nest 2 ("result:" <+> (pretty =<< instantiate (MetaV x es)))
     -- Should be ok with catchError_ but catchError is much safer since we don't
@@ -408,7 +436,7 @@ compareTerm' cmp a m n =
 --   not.
 compareTel :: MonadConversion m => Type -> Type ->
   Comparison -> Telescope -> Telescope -> m ()
-compareTel = compareTel' SFalse ()
+compareTel a b cmp l r = compareTel_ SFalse (If ()) (mkHet_ @'LHS a) (mkHet_ @'RHS b) cmp (mkHet_ @'LHS l) (mkHet_ @'RHS r)
 
 compareTelHet :: (MonadConversion m) =>
   ContextHet ->
@@ -420,43 +448,44 @@ compareTelHet :: (MonadConversion m) =>
   m ()
 compareTelHet ctx a b cmp l r =
   simplifyHet ctx $ \case
-    Right ()  -> compareTel' SFalse () (unHet @'LHS a) (unHet @'RHS b) cmp (unHet @'LHS l) (unHet @'RHS r)
-    Left ctx' -> compareTel' STrue  ctx' a b cmp l r
+    Right ()  -> compareTel_ SFalse (If ()) (mkIfHet_ @'LHS a) (mkIfHet_ @'RHS b) cmp (mkIfHet_ @'LHS l) (mkIfHet_ @'RHS r)
+    Left ctx' -> compareTel_ STrue  (If ctx') (mkIfHet_ a) (mkIfHet_ b) cmp (mkIfHet_ l) (mkIfHet_ r)
 
-compareTel' :: forall het m. (MonadConversion m, Sing het) => SingT het ->
-  If het ContextHet () ->
-  If het (Het 'LHS Type) Type ->
-  If het (Het 'RHS Type) Type ->
+compareTel_ :: forall het m. (MonadConversion m, Sing het) => SingT het ->
+  If_ het ContextHet () ->
+  IfHet het 'LHS Type ->
+  IfHet het 'RHS Type ->
   Comparison ->
-  If het (Het 'LHS Telescope) Telescope ->
-  If het (Het 'RHS Telescope) Telescope ->
+  IfHet het 'LHS Telescope ->
+  IfHet het 'RHS Telescope ->
   m ()
-compareTel' hetuni ctx t1 t2 cmp tel1 tel2 =
+compareTel_ hetuni ctx t1 t2 cmp tel1 tel2 =
   verboseBracket "tc.conv.tel" 20 "compareTel" $
-  catchConstraint (cTelCmp hetuni ctx t1 t2 cmp tel1 tel2) $ case (unHet_ @het @'LHS tel1, unHet_ @het @'RHS tel2) of
+  catchConstraint (cTelCmp hetuni (unIf ctx) (unIf t1) (unIf t2) cmp (unIf tel1) (unIf tel2)) $
+    case (unHet_ @'LHS tel1, unHet_ @'RHS tel2) of
     (EmptyTel, EmptyTel) -> return ()
     (EmptyTel, _)        -> bad
     (_, EmptyTel)        -> bad
     (ExtendTel dom1{-@(Dom i1 a1)-} tel1, ExtendTel dom2{-@(Dom i2 a2)-} tel2) -> do
-      compareDom hetuni ctx (fromCmp cmp) dom1 dom2 tel1 tel2 bad bad bad bad $ \hetuni' ctx' ->
-        compareTel' hetuni' ctx'  (mkHet_ @'LHS hetuni'$ unHet_ @het @'LHS @Type t1)
-                                  (mkHet_ @'RHS hetuni'$ unHet_ @het @'RHS @Type t2) cmp
-                                  (mkHet_ @'LHS hetuni'$ absBody tel1)
-                                  (mkHet_ @'RHS hetuni'$ absBody tel2)
+      compareDom hetuni (unIf ctx) (fromCmp cmp) dom1 dom2 tel1 tel2 bad bad bad bad $ \hetuni' ctx' ->
+        compareTel_ hetuni' (If ctx') (rHet_ @'LHS t1)
+                                  (rHet_ @'RHS t2) cmp
+                                  (mkHet_ @'LHS $ absBody tel1)
+                                  (mkHet_ @'RHS $ absBody tel2)
   where
     cTelCmp :: SingT het ->
       If het ContextHet () ->
-      If het (Het 'LHS Type) Type ->
-      If het (Het 'RHS Type) Type ->
+      IfHet_ het 'LHS Type ->
+      IfHet_ het 'RHS Type ->
       Comparison ->
-      If het (Het 'LHS Telescope) Telescope ->
-      If het (Het 'RHS Telescope) Telescope ->
+      IfHet_ het 'LHS Telescope ->
+      IfHet_ het 'RHS Telescope ->
       Constraint
     cTelCmp SFalse = \() -> TelCmp
     cTelCmp STrue  = TelCmpHet
     -- Andreas, 2011-05-10 better report message about types
     -- Victor, 2020-07-16 TODO: Put types in the appropriate context, e.g. as a Π-type
-    bad = typeError $ UnequalTypes cmp (unHet_ @het @'RHS t2) (unHet_ @het @'LHS t1)
+    bad = typeError $ errorInContextHet ctx $ UnequalTypes cmp (unHet_ @'RHS t2) (unHet_ @'LHS t1)
       -- switch t2 and t1 because of contravariance!
 
 compareAtomDir :: MonadConversion m => CompareDirection -> CompareAs -> Term -> Term -> m ()
@@ -757,7 +786,7 @@ compareAtom cmp t m n =
           _ -> __IMPOSSIBLE__
 
 -- | Check whether @a1 `cmp` a2@ and continue in context extended by @a1@.
-compareDom :: forall (het :: Bool) m c. (MonadConversion m , Free c)
+compareDom :: forall (het :: Bool) m c. (MonadConversion m , Free c, Sing het)
   => SingT het
   -> If het ContextHet ()
   -> CompareDirection -- ^ @cmp@ The comparison direction
@@ -1145,7 +1174,7 @@ compareType :: (MonadConversion m)
 compareType = compareType' SFalse () . fromCmp
 
 -- | Equality on Types
-compareType' :: forall het m. (MonadConversion m)
+compareType' :: forall het m. (MonadConversion m, Sing het)
   => SingT het
   -> If het ContextHet ()
   -> CompareDirection
@@ -1169,7 +1198,7 @@ compareType' hetuni ctx cmp ty1@(El s1 a1) ty2@(El s2 a2) =
           , hsep [ "   sorts:", uH' SLHS (prettyTCM s1), " and ",
                                 uH' SRHS (prettyTCM s2) ]
           ]
-        compareAs_ hetuni ctx cmp AsTypes a1 a2
+        compareAs_' hetuni (If ctx) cmp AsTypes (mkHet_ @'LHS a1) (mkHet_ @'RHS a2)
         unlessM ((optCumulativity <$> pragmaOptions) `or2M`
                  (not . optCompareSorts <$> pragmaOptions)) $
           uH' SCompat $ compareSort CmpEq s1 s2

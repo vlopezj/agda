@@ -323,12 +323,19 @@ ifBlocked
   :: (Reduce t, IsMeta t, MonadReduce m)
   => t -> (Blocker -> t -> m a) -> (NotBlocked -> t -> m a) -> m a
 ifBlocked t blocked unblocked = do
+  ifBlocked' t >>= \case
+    Left  x -> uncurry blocked x
+    Right x -> uncurry unblocked x
+
+ifBlocked' :: (Reduce t, IsMeta t, MonadReduce m) =>
+  t -> m (Either (Blocker, t) (NotBlocked, t))
+ifBlocked' t  = do
   t <- reduceB t
-  case t of
-    Blocked m t -> blocked m t
+  return$ case t of
+    Blocked m t -> Left (m, t)
     NotBlocked nb t -> case isMeta t of
-      Just m    -> blocked (unblockOnMeta m) t
-      Nothing   -> unblocked nb t
+      Just m    -> Left (unblockOnMeta m, t)
+      Nothing   -> Right (nb, t)
 
 -- | Throw pattern violation if blocked or a meta.
 abortIfBlocked :: (MonadReduce m, MonadTCError m, IsMeta t, Reduce t) => t -> m t

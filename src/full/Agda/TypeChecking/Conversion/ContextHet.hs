@@ -9,21 +9,23 @@
 module Agda.TypeChecking.Conversion.ContextHet
   (TwinT,TwinT',TwinT''(..),
    HetSideIsType,
-   twinAt,
    HetSide(..),
    Het(..),
    ContextHet(.., Empty, (:<|), (:|>)),
-   WithHet(..),
-   twinContextAt,
+   WithHet, WithHet'(..),
    underHet,
    underHet',
+   underHet_,
    AddContextHet(..),
    SingT(..),
-   mkHet_, unHet_, rHet_,
+   IfHet_, IfHet, If_(..), mkHet_, unHet_, rHet_, mkIfHet, mkIfHet_,
    commuteHet,
    maybeInContextHet,
    module Data.Sequence,
-   SimplifyHet(..))
+   SimplifyHet(..),
+   FlipHet(..),
+   TwinAt(..),
+   errorInContextHet)
 where
 
 import Data.Coerce
@@ -78,7 +80,8 @@ type TwinT' = TwinT'' Bool
 
 type TwinT = TwinT' Type
 
-data WithHet a = WithHet ContextHet a
+data WithHet' c a = WithHet c a
+type WithHet a = WithHet' ContextHet a
 
 type family HetSideIsType (s :: HetSide) :: Bool where
   HetSideIsType 'LHS    = 'True
@@ -86,14 +89,6 @@ type family HetSideIsType (s :: HetSide) :: Bool where
   HetSideIsType 'Compat = 'True
   HetSideIsType 'Both   = 'True
   HetSideIsType 'Whole  = 'False
-{-# INLINE twinAt #-}
-twinAt :: forall s. (Sing s, HetSideIsType s ~ 'True) => TwinT -> Type
-twinAt (SingleT a) = unHet @'Both a
-twinAt TwinT{twinLHS,twinRHS,twinCompat} = case (sing :: SingT s) of
-  SLHS    -> unHet @s $ twinLHS
-  SBoth   -> unHet @'LHS $ twinLHS
-  SRHS    -> unHet @s $ twinRHS
-  SCompat -> unHet @s $ twinCompat
 
 -- unTwinTCompat :: TwinT'' b a -> a
 -- unTwinTCompat (SingleT s) = unHet @'Both s
@@ -187,8 +182,44 @@ instance AddContextHet (Name, Dom TwinT) where
   {-# INLINABLE addContextHet #-}
   addContextHet ctx p κ = κ$ ctx :|> p
 
-twinContextAt :: forall s. (Sing s, HetSideIsType s ~ 'True) => ContextHet -> [(Name, Dom Type)]
-twinContextAt = fmap (fmap (fmap (twinAt @s))) . toList . unContextHet
+class TwinAt (s :: HetSide) a where
+  type TwinAt_ s a
+  type TwinAt_ s a = a
+  twinAt :: a -> TwinAt_ s a
+
+instance (Sing s, HetSideIsType s ~ 'True) => TwinAt s ContextHet where
+  type TwinAt_ s ContextHet = [(Name, Dom Type)]
+  twinAt = fmap (fmap (fmap (twinAt @s))) . toList . unContextHet
+
+instance TwinAt s a => TwinAt s (CompareAs' a) where
+  type TwinAt_ s (CompareAs' a) = CompareAs' (TwinAt_ s a)
+  twinAt = fmap (twinAt @s)
+
+instance (Sing s, HetSideIsType s ~ 'True) => TwinAt s TwinT where
+  type TwinAt_ s TwinT = Type
+  {-# INLINE twinAt #-}
+  twinAt (SingleT a) = unHet @'Both a
+  twinAt TwinT{twinLHS,twinRHS,twinCompat} = case (sing :: SingT s) of
+    SLHS    -> unHet @s $ twinLHS
+    SBoth   -> unHet @'LHS $ twinLHS
+    SRHS    -> unHet @s $ twinRHS
+    SCompat -> unHet @s $ twinCompat
+
+instance TwinAt s ()   where
+  type TwinAt_ s () = [(Name, Dom Type)]
+  twinAt = const []
+
+instance TwinAt s Term where twinAt = id
+instance TwinAt s Type where twinAt = id
+instance TwinAt s (Het s a) where
+  type TwinAt_ s (Het s a) = a
+  twinAt = coerce
+
+instance (TwinAt s a, TwinAt s b, Sing het, TwinAt_ s a ~ TwinAt_ s b) => TwinAt s (If_ het a b) where
+  type TwinAt_ s (If_ het a b) = TwinAt_ s a
+  twinAt = case sing :: SingT het of
+    STrue  -> twinAt @s . unIf
+    SFalse -> twinAt @s . unIf
 
 instance TermLike ContextHet where
   foldTerm f = foldMap (foldTerm f . snd) . unContextHet
@@ -219,29 +250,45 @@ instance AddContextHet (String, Dom TwinT) where
 {-# SPECIALIZE underHet :: ContextHet -> (a -> TCM b) -> Het 'RHS a -> TCM (Het 'RHS b) #-}
 {-# SPECIALIZE underHet :: ContextHet -> (a -> TCM b) -> Het 'Compat a -> TCM (Het 'Compat b) #-}
 underHet :: forall s m a b. (MonadAddContext m, Sing s, HetSideIsType s ~ 'True) => ContextHet -> (a -> m b) -> Het s a -> m (Het s b)
-underHet ctx f = traverse (addContext (twinContextAt @s ctx) . f)
+underHet ctx f = traverse (addContext (twinAt @s ctx) . f)
 
 underHet' :: forall s m a het. (MonadAddContext m, Sing s, HetSideIsType s ~ 'True) =>
              SingT het -> If het ContextHet () -> m a -> m a
-underHet' STrue  ctx = addContext (twinContextAt @s ctx)
+underHet' STrue  ctx = addContext (twinAt @s ctx)
 underHet' SFalse ()  = id
 
+underHet_ :: forall s m a het. (MonadAddContext m, Sing s, HetSideIsType s ~ 'True, Sing het) =>
+             If_ het ContextHet () -> m a -> m a
+underHet_ = underHet' @s @m @a @het (sing :: SingT het) . unIf
+
+
+type IfHet_ het side a = If  het (Het side a) a
+type IfHet het side a =  If_ het (Het side a) a
+newtype If_ het a b = If { unIf :: If het a b }
+
+{-# INLINE mkIfHet #-}
+mkIfHet :: forall s het a. (Sing het) => IfHet_ het s a -> IfHet het s a
+mkIfHet = If
+
+{-# INLINE mkIfHet_ #-}
+mkIfHet_ :: forall s het a. (Sing het) => Het s a -> IfHet het s a
+mkIfHet_ = mkHet_ . unHet
+
 {-# INLINE mkHet_ #-}
-mkHet_ :: forall s het a. (Sing het) => SingT het -> a -> If het (Het s a) a
-mkHet_ _ = case sing :: SingT het of
-  STrue -> Het
-  SFalse -> id
+mkHet_ :: forall s het a. (Sing het) => a -> IfHet het s a
+mkHet_ = case sing :: SingT het of
+  STrue -> If . Het
+  SFalse -> If . id
 
-unHet_ :: forall het s a. (Sing het) => If het (Het s a) a -> a
+{-# INLINE rHet_ #-}
+rHet_ :: forall s het het' a. (Sing het, Sing het') => IfHet het' s a -> IfHet het s a
+rHet_ = mkHet_ . unHet_
+
+{-# INLINE unHet_ #-}
+unHet_ :: forall s het a. (Sing het) => IfHet het s a -> a
 unHet_ = case sing :: SingT het of
-  STrue  -> unHet
-  SFalse -> id
-
-rHet_ :: forall s het a. (Sing het) => If het (Het s a) a -> Het s a
-rHet_ = case sing :: SingT het of
-  STrue  -> id
-  SFalse -> Het
-
+  STrue  -> unHet . unIf
+  SFalse -> id . unIf
 
 {-# INLINE commuteHet #-}
 commuteHet :: (Coercible (f a) (f (Het s a))) => Het s (f a) -> f (Het s a)
@@ -329,3 +376,47 @@ instance SimplifyHet a => SimplifyHet (Het side a) where
   simplifyHet (Het a) κ = simplifyHet a $ \case
     Right a' -> κ$ Right a'
     Left  a' -> κ$ Left$ Het a'
+
+class FlipHet a where
+  type FlippedHet a
+  type FlippedHet a = a
+
+  flipHet :: a -> FlippedHet a
+
+instance FlipHet (Het 'LHS a) where
+  type FlippedHet (Het 'LHS a) = (Het 'RHS a)
+  flipHet = coerce
+
+instance FlipHet (Het 'RHS a) where
+  type FlippedHet (Het 'RHS a) = (Het 'LHS a)
+  flipHet = coerce
+
+instance FlipHet (Het 'Both a) where
+  flipHet = id
+
+instance FlipHet TwinT where
+  flipHet a@SingleT{} = a
+  flipHet TwinT{twinLHS,twinRHS,twinPid,necessary,twinCompat} =
+    TwinT{twinLHS=flipHet twinRHS,twinRHS=flipHet twinLHS,twinCompat,necessary,twinPid}
+
+instance FlipHet ContextHet where
+  flipHet (ContextHet ctx) = ContextHet$ fmap (fmap (fmap flipHet)) ctx
+
+instance FlipHet Term where flipHet = id
+instance FlipHet Type where flipHet = id
+instance FlipHet ()   where flipHet = id
+
+instance FlipHet a => FlipHet (CompareAs' a) where
+  type FlippedHet (CompareAs' a) = CompareAs' (FlippedHet a)
+  flipHet = fmap flipHet
+
+instance (Sing het, FlipHet a, FlipHet b) => FlipHet (If_ het a b) where
+  type FlippedHet (If_ het a b) = If_ het (FlippedHet a) (FlippedHet b)
+  flipHet = case sing :: SingT het of
+    STrue  -> If . flipHet . unIf
+    SFalse -> If . flipHet . unIf
+
+errorInContextHet :: forall het. (Sing het) => If_ het ContextHet () -> TypeError -> TypeError
+errorInContextHet ctx = case sing :: SingT het of
+  STrue  -> ErrorInContextHet (unIf ctx)
+  SFalse -> case ctx of If () -> id
