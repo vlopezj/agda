@@ -307,13 +307,19 @@ compareAsDir dir a t u = compareAsDir_ @'False (If ()) dir (fmap If a) t u
 
 compareAsDir_ :: forall het m. (MonadConversion m, Sing het) =>
                  If_ het ContextHet () -> CompareDirection -> CompareAs' (If_ het TwinT Type) -> Term -> Term -> m ()
-compareAsDir_ ctx dir a t u = underHet_ @'Compat ctx$ dirToCmp (`compareAs'` twinAt @'Compat a) dir t u
+compareAsDir_ ctx dir a t u = dirToCmp_ dir (ctx, a, HetP (Het @'LHS t) (Het @'RHS u)) $
+  \cmp (ctx', a', HetP (unHet @'LHS -> t') (unHet @'RHS -> u')) -> compareAs'_ ctx' cmp a' t' u'
 
 compareAs' :: forall m. MonadConversion m => Comparison -> CompareAs -> Term -> Term -> m ()
-compareAs' cmp tt m n = case tt of
-  AsTermsOf a -> compareTerm' cmp a m n
-  AsSizes     -> compareSizes cmp m n
-  AsTypes     -> compareAtom cmp AsTypes m n
+compareAs' cmp a t u = compareAs'_ @'False (If ()) cmp (fmap If a) t u
+
+compareAs'_ :: forall het m. (Sing het, MonadConversion m) =>
+  If_ het ContextHet () ->
+  Comparison -> CompareAs' (If_ het TwinT Type) -> Term -> Term -> m ()
+compareAs'_ ctx cmp tt m n = case tt of
+  AsTermsOf a -> underHet_ @'Compat ctx$ compareTerm' cmp (twinAt @'Compat a) m n
+  AsSizes     -> underHet_ @'Compat ctx$ compareSizes cmp m n
+  AsTypes     -> underHet_ @'Compat ctx$ compareAtom cmp AsTypes m n
 
 compareTerm' :: forall m. MonadConversion m => Comparison -> Type -> Term -> Term -> m ()
 compareTerm' cmp a m n =

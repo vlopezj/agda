@@ -25,7 +25,8 @@ module Agda.TypeChecking.Conversion.ContextHet
    SimplifyHet(..),
    FlipHet(..),
    TwinAt(..),
-   errorInContextHet)
+   errorInContextHet,
+   HetP(..),dirToCmp_)
 where
 
 import Data.Coerce
@@ -416,7 +417,24 @@ instance (Sing het, FlipHet a, FlipHet b) => FlipHet (If_ het a b) where
     STrue  -> If . flipHet . unIf
     SFalse -> If . flipHet . unIf
 
+instance (FlipHet a, FlipHet b) => FlipHet (a, b) where
+  type FlippedHet (a, b) = (FlippedHet a, FlippedHet b)
+  flipHet (a,b) = (flipHet a, flipHet b)
+
+instance (FlipHet a, FlipHet b, FlipHet c) => FlipHet (a, b, c) where
+  type FlippedHet (a, b, c) = (FlippedHet a, FlippedHet b, FlippedHet c)
+  flipHet (a,b,c) = (flipHet a, flipHet b, flipHet c)
+
+data HetP a = HetP (Het 'LHS a) (Het 'RHS a)
+instance FlipHet (HetP a) where
+  flipHet (HetP a b) = HetP (flipHet b) (flipHet a)
+
 errorInContextHet :: forall het. (Sing het) => If_ het ContextHet () -> TypeError -> TypeError
 errorInContextHet ctx = case sing :: SingT het of
   STrue  -> ErrorInContextHet (unIf ctx)
   SFalse -> case ctx of If () -> id
+
+dirToCmp_ :: (FlipHet a, FlippedHet a ~ a) => CompareDirection -> a -> (Comparison -> a -> c) -> c
+dirToCmp_ DirGeq a κ = κ CmpLeq (flipHet a)
+dirToCmp_ DirEq  a κ = κ CmpEq  a
+dirToCmp_ DirLeq a κ = κ CmpLeq a
