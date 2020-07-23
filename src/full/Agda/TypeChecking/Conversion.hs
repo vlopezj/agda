@@ -322,30 +322,46 @@ compareAs'_ ctx cmp tt m n = case tt of
   AsTypes     -> underHet_ @'Compat ctx$ compareAtom cmp AsTypes m n
 
 compareTerm' :: forall m. MonadConversion m => Comparison -> Type -> Term -> Term -> m ()
-compareTerm' cmp a m n =
+compareTerm' cmp a m n = compareTerm'_ @'False (If ()) cmp (If a) (IfHet @'LHS m) (IfHet @'RHS n)
+
+compareTerm'_ :: forall het m. (MonadConversion m, Sing het) =>
+                 If_ het ContextHet () ->
+                 Comparison ->
+                 If_ het TwinT Type ->
+                 IfHet het 'LHS Term -> IfHet het 'RHS Term -> m ()
+compareTerm'_ ctx cmp a m n =
+  let uH :: forall (s :: HetSide) m a.
+            (HetSideIsType s ~ 'True, MonadAddContext m, Sing s) =>
+            m a -> m a
+      uH = underHet_ @s ctx
+  in
   verboseBracket "tc.conv.term" 20 "compareTerm" $ do
-  a' <- reduce a
-  (catchConstraint (ValueCmp cmp (AsTermsOf a') m n) :: m () -> m ()) $ do
+  (WithHet _ a') <- reduce (WithHet ctx a)
+  (catchConstraint
+        (case sing :: SingT het of
+           SFalse -> ValueCmp cmp (AsTermsOf (unIf a')) (unIf m) (unIf n)
+           STrue  -> ValueCmpHet cmp (unIf ctx) (Het @'Whole$ AsTermsOf (unIf a')) (unIf m) (unIf n))
+    :: m () -> m ()) $ do
     reportSDoc "tc.conv.term" 30 $ fsep
-      [ "compareTerm", prettyTCM m, prettyTCM cmp, prettyTCM n, ":", prettyTCM a' ]
+      [ "compareTerm", prettyTCM ctx, "⊢", prettyTCM (WithHet ctx m), prettyTCM cmp, prettyTCM (WithHet ctx n), ":", prettyTCM (WithHet ctx a') ]
     propIrr  <- isPropEnabled
-    isSize   <- isJust <$> isSizeType a'
-    s        <- reduce $ getSort a'
+    isSize   <- isJust <$> (uH @'Compat$ isSizeType (twinAt @'Compat a'))
+    s        <- uH @'Compat$ reduce $ getSort (twinAt @'Compat a')
     mlvl     <- getBuiltin' builtinLevel
     reportSDoc "tc.conv.level" 60 $ nest 2 $ sep
       [ "a'   =" <+> pretty a'
       , "mlvl =" <+> pretty mlvl
-      , text $ "(Just (unEl a') == mlvl) = " ++ show (Just (unEl a') == mlvl)
+      , text $ "(Just (unEl a') == mlvl) = " ++ show (Just (unEl (twinAt @'Compat a')) == mlvl)
       ]
     case s of
-      Prop{} | propIrr -> compareIrrelevant a' m n
-      _    | isSize   -> compareSizes cmp m n
-      _               -> case unEl a' of
-        a | Just a == mlvl -> do
-          a <- levelView m
-          b <- levelView n
+      Prop{} | propIrr -> uH @'Compat$ compareIrrelevant (twinAt @'Compat a') (twinAt @'Compat m) (twinAt @'Compat n)
+      _    | isSize   -> uH @'Compat$ compareSizes cmp (twinAt @'Compat m) (twinAt @'Compat n)
+      _               -> case unEl (twinAt @'Compat a') of
+        a | Just a == mlvl -> uH @'Compat$ do
+          a <- levelView (twinAt @'LHS m)
+          b <- levelView (twinAt @'RHS n)
           equalLevel a b
-        a@Pi{}    -> equalFun s a m n
+        a@Pi{}    -> uH @'Compat$ equalFun s a (twinAt @'Compat m) (twinAt @'Compat n)
         Lam _ _   -> __IMPOSSIBLE__
         Def r es  -> do
           isrec <- isEtaRecord r
@@ -366,14 +382,14 @@ compareTerm' cmp a m n =
                   isMeta (NotBlocked _ MetaV{}) = True
                   isMeta _                      = False
 
-              reportSDoc "tc.conv.term" 30 $ prettyTCM a <+> "is eta record type"
-              m <- reduceB m
-              mNeutral <- isNeutral m
-              n <- reduceB n
-              nNeutral <- isNeutral n
+              reportSDoc "tc.conv.term" 30 $ prettyTCM (WithHet ctx a) <+> "is eta record type"
+              m <- uH @'LHS$ reduceB (twinAt @'LHS m)
+              mNeutral <- uH @'LHS$ isNeutral m
+              n <- uH @'RHS$ reduceB (twinAt @'RHS n)
+              nNeutral <- uH @'RHS$ isNeutral n
               case (m, n) of
                 _ | isMeta m || isMeta n ->
-                    compareAtom cmp (AsTermsOf a') (ignoreBlocking m) (ignoreBlocking n)
+                    uH @'Compat$ compareAtom cmp (AsTermsOf (twinAt @'Compat a')) (ignoreBlocking m) (ignoreBlocking n)
 
                 _ | mNeutral && nNeutral -> do
                     -- Andreas 2011-03-23: (fixing issue 396)
@@ -383,18 +399,18 @@ compareTerm' cmp a m n =
                     case isSing of
                       Right True -> return ()
                       -- do not eta-expand if comparing two neutrals
-                      _ -> compareAtom cmp (AsTermsOf a') (ignoreBlocking m) (ignoreBlocking n)
+                      _ -> uH @'Compat$ compareAtom cmp (AsTermsOf (twinAt @'Compat a')) (ignoreBlocking m) (ignoreBlocking n)
                 _ -> do
-                  (tel, m') <- etaExpandRecord r ps $ ignoreBlocking m
-                  (_  , n') <- etaExpandRecord r ps $ ignoreBlocking n
+                  (tel, m') <- uH @'LHS$ etaExpandRecord r ps $ ignoreBlocking m
+                  (_  , n') <- uH @'RHS$ etaExpandRecord r ps $ ignoreBlocking n
                   -- No subtyping on record terms
                   c <- getRecordConstructor r
                   -- Record constructors are covariant (see test/succeed/CovariantConstructors).
-                  compareArgs (repeat $ polFromCmp cmp) [] (telePi_ tel __DUMMY_TYPE__) (Con c ConOSystem []) m' n'
+                  uH @'Compat$ compareArgs (repeat $ polFromCmp cmp) [] (telePi_ tel __DUMMY_TYPE__) (Con c ConOSystem []) m' n'
 
-            else (do pathview <- pathView a'
-                     equalPath pathview a' m n)
-        _ -> compareAtom cmp (AsTermsOf a') m n
+            else (do pathview <- pathView (twinAt @'Compat a')
+                     uH @'Compat$ equalPath pathview (twinAt @'Compat a') (twinAt @'Compat m) (twinAt @'Compat n))
+        _ -> uH @'Compat$ compareAtom cmp (AsTermsOf (twinAt @'Compat a')) (twinAt @'Compat m) (twinAt @'Compat n)
   where
     -- equality at function type (accounts for eta)
     equalFun :: (MonadConversion m) => Sort -> Term -> Term -> Term -> m ()

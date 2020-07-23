@@ -18,7 +18,7 @@ module Agda.TypeChecking.Conversion.ContextHet
    underHet_,
    AddContextHet(..),
    SingT(..),
-   IfHet_, IfHet, If_(..), mkHet_, unHet_, rHet_, mkIfHet, mkIfHet_,
+   IfHet_, IfHet, pattern IfHet, If_(..), mkHet_, unHet_, rHet_, mkIfHet, mkIfHet_,
    commuteHet,
    maybeInContextHet,
    module Data.Sequence,
@@ -135,6 +135,11 @@ instance Pretty a => Pretty (TwinT' a) where
              <> "]"
              <> pretty b
 
+instance (Sing het, Pretty a, Pretty b) => Pretty (If_ het a b) where
+  pretty (If a) = case sing :: SingT het of
+    STrue  -> pretty a
+    SFalse -> pretty a
+
 data HetSide = LHS | RHS | Compat | Whole | Both
 data instance SingT (a :: HetSide) where
   SLHS    :: SingT 'LHS
@@ -216,6 +221,14 @@ instance TwinAt s (Het s a) where
   type TwinAt_ s (Het s a) = a
   twinAt = coerce
 
+instance TwinAt 'Compat (Het 'LHS a) where
+  type TwinAt_ 'Compat (Het 'LHS a) = a
+  twinAt = coerce
+
+instance TwinAt 'Compat (Het 'RHS a) where
+  type TwinAt_ 'Compat (Het 'RHS a) = a
+  twinAt = coerce
+
 instance (TwinAt s a, TwinAt s b, Sing het, TwinAt_ s a ~ TwinAt_ s b) => TwinAt s (If_ het a b) where
   type TwinAt_ s (If_ het a b) = TwinAt_ s a
   twinAt = case sing :: SingT het of
@@ -266,6 +279,8 @@ underHet_ = underHet' @s @m @a @het (sing :: SingT het) . unIf
 type IfHet_ het side a = If  het (Het side a) a
 type IfHet het side a =  If_ het (Het side a) a
 newtype If_ het a b = If { unIf :: If het a b }
+pattern IfHet :: forall s het a. IfHet_ het s a -> IfHet het s a
+pattern IfHet a = If a
 
 {-# INLINE mkIfHet #-}
 mkIfHet :: forall s het a. (Sing het) => IfHet_ het s a -> IfHet het s a

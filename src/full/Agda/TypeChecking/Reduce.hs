@@ -872,6 +872,11 @@ instance {-# OVERLAPPING #-} ReduceHet a => ReduceHet (Het 'Whole a)
 instance ReduceHet a => ReduceHet (Dom a)
 instance ReduceHet a => ReduceHet (CompareAs' a)
 
+instance (Sing het, ReduceHet a, Reduce b) => Reduce (WithHet' (If_ het ContextHet ()) (If_ het a b)) where
+  reduce' (WithHet (If ctx) (If a)) = WithHet (If ctx) . If <$> case sing :: SingT het of
+    STrue  -> reduceHet' ctx a
+    SFalse -> reduce' a
+
 instance Reduce ContextHet where
   reduce' = go Empty
     where
