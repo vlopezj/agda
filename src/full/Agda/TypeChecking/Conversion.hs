@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes      #-}
 {-# LANGUAGE KindSignatures           #-}
 {-# LANGUAGE NondecreasingIndentation #-}
 {-# LANGUAGE TypeFamilies             #-}
@@ -233,10 +234,10 @@ compareAs_ hetuni ctx cmp a u v = do
               unlessSubtyping $ solve1 `orelse` solve2 `orelse` fallback
           | otherwise -> fallback
           where
-            (solve1, solve2) | x > y     = (uH$ assign dir x us (twinAt @'RHS v), uH$ assign rid y vs (twinAt @'LHS u))
-                             | otherwise = (uH$ assign rid y vs (twinAt @'LHS u), uH$ assign dir x us (twinAt @'RHS v))
-        (MetaV x us, _) -> unlessSubtyping $ uH (assign dir x us (twinAt @'RHS v)) `orelse` fallback
-        (_, MetaV y vs) -> unlessSubtyping $ uH (assign rid y vs (twinAt @'LHS u)) `orelse` fallback
+            (solve1, solve2) | x > y     = (assign ctx dir x us (twinAt @'RHS v) a, assign (flipHet ctx) rid y vs (twinAt @'LHS u) (flipHet a))
+                             | otherwise = (assign (flipHet ctx) rid y vs (twinAt @'LHS u) (flipHet a), assign (flipHet ctx) dir x us (twinAt @'RHS v) (flipHet a))
+        (MetaV x us, _) -> unlessSubtyping $ (assign ctx dir x us (twinAt @'RHS v) a) `orelse` fallback
+        (_, MetaV y vs) -> unlessSubtyping $ (assign (flipHet ctx) rid y vs (twinAt @'LHS u) (flipHet a)) `orelse` fallback
         (Def f es, Def f' es') | f == f' ->
           ifNotM (optFirstOrder <$> pragmaOptions) fallback $ {- else -} unlessSubtyping $ do
           def <- uH$ getConstInfo f
@@ -246,17 +247,21 @@ compareAs_ hetuni ctx cmp a u v = do
           uH (compareElims pol [] (defType def) (Def f []) es es') `orelse` fallback
         _               -> fallback
   where
-    assign :: CompareDirection -> MetaId -> Elims -> Term -> m ()
-    assign dir x es v = do
+    assign :: If_ het ContextHet () -> CompareDirection -> MetaId -> Elims -> Term -> CompareAs' (If_ het TwinT Type) -> m ()
+    assign ctx dir x es v a = do
+      let uH :: forall (s :: HetSide) m a.
+                (HetSideIsType s ~ 'True, MonadAddContext m, Sing s) =>
+                m a -> m a
+          uH = underHet_ @s ctx
       -- Andreas, 2013-10-19 can only solve if no projections
       reportSDoc "tc.conv.term.shortcut" 20 $ sep
         [ "attempting shortcut"
-        , nest 2 $ prettyTCM (MetaV x es) <+> ":=" <+> prettyTCM v
+        , nest 2 $ (uH @'LHS $ prettyTCM (MetaV x es)) <+> ":=" <+> (uH @'RHS $ prettyTCM v)
         ]
       whenM (isInstantiatedMeta x) (patternViolation alwaysUnblock) -- Already instantiated, retry right away
-      assignE dir x es v (twinAt @'Compat a) $ compareAsDir dir (twinAt @'Compat a)
+      assignE_ ctx dir x es v a $ compareAsDir_ ctx dir a
       reportSDoc "tc.conv.term.shortcut" 50 $
-        "shortcut successful" $$ nest 2 ("result:" <+> (pretty =<< instantiate (MetaV x es)))
+        "shortcut successful" $$ nest 2 ("result:" <+> uH @'LHS (pretty =<< instantiate (MetaV x es)))
     -- Should be ok with catchError_ but catchError is much safer since we don't
     -- rethrow errors.
     orelse :: m () -> m () -> m ()
@@ -266,21 +271,30 @@ compareAs_ hetuni ctx cmp a u v = do
 --   and run conversion check again.
 assignE :: (MonadConversion m)
         => CompareDirection -> MetaId -> Elims -> Term -> CompareAs -> (Term -> Term -> m ()) -> m ()
-assignE dir x es v a comp = assignWrapper dir x es v $ do
+assignE dir x es v a comp = assignE_ @'False (If ()) dir x es v (fmap If a) comp
+
+assignE_ :: forall het m. (MonadConversion m, Sing het)
+        => If_ het ContextHet ()
+        -> CompareDirection -> MetaId -> Elims -> Term -> CompareAs' (If_ het TwinT Type) -> (Term -> Term -> m ()) -> m ()
+assignE_ ctx dir x es v a comp = assignWrapper dir x es v $ do
+  let uH :: forall (s :: HetSide) m a.
+            (HetSideIsType s ~ 'True, MonadAddContext m, Sing s) =>
+            m a -> m a
+      uH = underHet_ @s ctx
   case allApplyElims es of
-    Just vs -> assignV dir x vs v a
+    Just vs -> uH @'Compat $ assignV dir x vs v (twinAt @'Compat a)
     Nothing -> do
       reportSDoc "tc.conv.assign" 30 $ sep
         [ "assigning to projected meta "
-        , prettyTCM x <+> sep (map prettyTCM es) <+> text (":" ++ show dir) <+> prettyTCM v
+        , uH @'LHS (prettyTCM x <+> sep (map prettyTCM es)) <+> text (":" ++ show dir) <+> uH @'RHS (prettyTCM v)
         ]
       etaExpandMeta [Records] x
-      res <- isInstantiatedMeta' x
+      res <- uH @'Compat $ isInstantiatedMeta' x
       case res of
         Just u  -> do
           reportSDoc "tc.conv.assign" 30 $ sep
             [ "seems like eta expansion instantiated meta "
-            , prettyTCM x <+> text  (":" ++ show dir) <+> prettyTCM u
+            , uH @'Compat $ prettyTCM x <+> text  (":" ++ show dir) <+> prettyTCM u
             ]
           let w = u `applyE` es
           comp w v
@@ -289,7 +303,11 @@ assignE dir x es v a comp = assignWrapper dir x es v $ do
           patternViolation (unblockOnAnyMetaIn (MetaV x es)) -- nothing happened, give up
 
 compareAsDir :: MonadConversion m => CompareDirection -> CompareAs -> Term -> Term -> m ()
-compareAsDir dir a = dirToCmp (`compareAs'` a) dir
+compareAsDir dir a t u = compareAsDir_ @'False (If ()) dir (fmap If a) t u
+
+compareAsDir_ :: forall het m. (MonadConversion m, Sing het) =>
+                 If_ het ContextHet () -> CompareDirection -> CompareAs' (If_ het TwinT Type) -> Term -> Term -> m ()
+compareAsDir_ ctx dir a t u = underHet_ @'Compat ctx$ dirToCmp (`compareAs'` twinAt @'Compat a) dir t u
 
 compareAs' :: forall m. MonadConversion m => Comparison -> CompareAs -> Term -> Term -> m ()
 compareAs' cmp tt m n = case tt of
