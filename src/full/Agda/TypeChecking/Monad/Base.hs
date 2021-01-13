@@ -2841,6 +2841,10 @@ deriving instance Show t => Show (Het side t)
 deriving instance Functor (Het side)
 instance AllMetas a => AllMetas (Het side a) where allMetas f xs = foldMap (allMetas f) xs
 
+instance Decoration (Het s) where
+  traverseF f = fmap coerce . f . coerce
+  distributeF = traverseF id
+
 instance Applicative (Het s) where
   pure = Het
   Het f <*> Het a = Het (f a)
@@ -2881,9 +2885,6 @@ instance AsTwin (Het side a) where
 instance AsTwin a => AsTwin (Dom a) where
   type AsTwin_ (Dom a) = Dom (AsTwin_ a)
   asTwin = fmap asTwin
-instance AsTwin a => AsTwin (Name, a) where
-  type AsTwin_ (Name, a) = (Name, AsTwin_ a)
-  asTwin = fmap asTwin
 instance AsTwin () where type AsTwin_ () = (); asTwin = id
 instance AsTwin a => AsTwin (Abs a) where
   type AsTwin_ (Abs a) = Abs (AsTwin_ a)
@@ -2891,6 +2892,12 @@ instance AsTwin a => AsTwin (Abs a) where
 instance AsTwin a => AsTwin (Tele a) where
   type AsTwin_ (Tele a) = Tele (AsTwin_ a)
   asTwin = fmap asTwin
+instance (AsTwin a, AsTwin b) => AsTwin (a, b) where
+  type AsTwin_ (a, b) = (AsTwin_ a, AsTwin_ b)
+  asTwin (a, b) = (asTwin a, asTwin b)
+instance AsTwin Name where
+  type AsTwin_ Name = Name
+  asTwin = id
 
 class TwinAt (s :: HetSide) a where
   type TwinAt_ s a
@@ -2945,6 +2952,22 @@ instance TwinAt s a => TwinAt s (CompareAs' a) where
 
 instance TwinAt s a => TwinAt s (Tele a) where
   type TwinAt_ s (Tele a) = Tele (TwinAt_ s a)
+  twinAt = fmap (twinAt @s)
+
+instance TwinAt s a => TwinAt s (Maybe a) where
+  type TwinAt_ s (Maybe a) = Maybe (TwinAt_ s a)
+  twinAt = fmap (twinAt @s)
+
+instance TwinAt s a => TwinAt s [a] where
+  type TwinAt_ s [a] = [TwinAt_ s a]
+  twinAt = fmap (twinAt @s)
+
+instance TwinAt s a => TwinAt s (Elim' a) where
+  type TwinAt_ s (Elim' a) = Elim' (TwinAt_ s a)
+  twinAt = fmap (twinAt @s)
+
+instance TwinAt s a => TwinAt s (Arg a) where
+  type TwinAt_ s (Arg a) = Arg (TwinAt_ s a)
   twinAt = fmap (twinAt @s)
 
 instance Sized ContextHet where
